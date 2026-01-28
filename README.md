@@ -124,6 +124,7 @@ All tools return JSON with these fields:
 | `MOONBRIDGE_TIMEOUT` | Default timeout in seconds (30-3600) |
 | `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
 | `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |
+| `MOONBRIDGE_STRICT` | Set to `1` to require `ALLOWED_DIRS` (exits if unset) |
 | `MOONBRIDGE_LOG_LEVEL` | Set to `DEBUG` for verbose logging |
 
 ## Troubleshooting
@@ -157,6 +158,20 @@ Or set a global default:
 
 ```bash
 export MOONBRIDGE_TIMEOUT=1800
+```
+
+### "MOONBRIDGE_ALLOWED_DIRS is not set" warning
+
+By default, Moonbridge warns at startup if no directory restrictions are configured. This is expected for local development. For shared/production environments, set allowed directories:
+
+```bash
+export MOONBRIDGE_ALLOWED_DIRS="/path/to/project:/another/path"
+```
+
+To enforce restrictions (exit instead of warn):
+
+```bash
+export MOONBRIDGE_STRICT=1
 ```
 
 ### Permission denied on working directory
