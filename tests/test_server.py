@@ -328,3 +328,33 @@ def test_validate_prompt_exceeds_max():
     max_len = server_module.MAX_PROMPT_LENGTH
     with pytest.raises(ValueError, match=f"prompt exceeds {max_len} characters"):
         server_module._validate_prompt("a" * (max_len + 1))
+
+
+def test_validate_cwd_symlink_escape(monkeypatch, tmp_path):
+    """Symlink inside allowed pointing outside should be rejected."""
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Symlink inside allowed pointing to outside (escape attempt)
+    symlink_inside = allowed_dir / "escape"
+    symlink_inside.symlink_to(outside)
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    # Symlink resolves to outside, should be rejected
+    with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
+        server_module._validate_cwd(str(symlink_inside))
+
+
+def test_validate_cwd_traversal_attempt(monkeypatch, tmp_path):
+    """Path traversal via ../ should resolve before checking."""
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Attacker tries: /tmp/xxx/allowed/../outside
+    traversal = str(allowed_dir / ".." / "outside")
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
+        server_module._validate_cwd(traversal)
