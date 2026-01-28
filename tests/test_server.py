@@ -36,7 +36,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch):
     lock = threading.Lock()
     event = threading.Event()
 
-    def fake_run(prompt, thinking, cwd, timeout_seconds, agent_index):
+    def fake_run(_adapter, prompt, thinking, cwd, timeout_seconds, agent_index):
         with lock:
             starts.append(time.monotonic())
             if len(starts) == 2:
@@ -51,7 +51,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch):
             "agent_index": agent_index,
         }
 
-    monkeypatch.setattr(server_module, "_run_kimi_sync", fake_run)
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
     monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
 
     result = await server_module.handle_tool(
@@ -97,7 +97,7 @@ async def test_auth_detection_returns_actionable_message(mock_popen):
 async def test_check_status_installed(mock_which_kimi, monkeypatch):
     monkeypatch.setattr(
         server_module,
-        "_run_kimi_sync",
+        "_run_cli_sync",
         lambda *args, **kwargs: {
             "status": "success",
             "output": "ok",
