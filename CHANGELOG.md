@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.2.0...moonbridge-v0.2.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* **ci:** chain publish job in release-please workflow ([d7295cc](https://github.com/misty-step/moonbridge/commit/d7295cce2f74c77abf6321ab2906e6b46e9af21d))
+
 ## [0.2.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.1.0...moonbridge-v0.2.0) (2026-01-28)
 
 
