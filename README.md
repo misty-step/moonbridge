@@ -102,6 +102,7 @@ All tools return JSON with these fields:
 
 | Variable | Description |
 |----------|-------------|
+| `MOONBRIDGE_ADAPTER` | Default adapter (default: `kimi`) |
 | `MOONBRIDGE_TIMEOUT` | Default timeout in seconds (30-3600) |
 | `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
 | `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |

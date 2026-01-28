@@ -32,8 +32,35 @@ def test_kimi_adapter_check_not_installed(mocker):
     assert path is None
 
 
-def test_get_adapter_default():
+def test_get_adapter_default(monkeypatch):
+    monkeypatch.delenv("MOONBRIDGE_ADAPTER", raising=False)
     adapter: CLIAdapter = get_adapter()
+    assert adapter.config.name == "kimi"
+
+
+def test_get_adapter_env_override(monkeypatch):
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "kimi")
+    adapter = get_adapter()
+    assert isinstance(adapter, KimiAdapter)
+
+
+def test_get_adapter_env_invalid_raises(monkeypatch):
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "nonexistent")
+    with pytest.raises(ValueError, match="Unknown adapter: nonexistent. Available: kimi"):
+        get_adapter()
+
+
+def test_get_adapter_explicit_name_overrides_env(monkeypatch):
+    """Explicit name parameter takes precedence over env var."""
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "nonexistent")
+    adapter = get_adapter("kimi")
+    assert adapter.config.name == "kimi"
+
+
+def test_get_adapter_env_whitespace_falls_back_to_default(monkeypatch):
+    """Whitespace-only env var falls back to default."""
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "  ")
+    adapter = get_adapter()
     assert adapter.config.name == "kimi"
 
 
