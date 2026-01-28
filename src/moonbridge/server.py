@@ -26,6 +26,7 @@ logger = logging.getLogger("moonbridge")
 
 DEFAULT_TIMEOUT = int(os.environ.get("MOONBRIDGE_TIMEOUT", "600"))
 MAX_PARALLEL_AGENTS = int(os.environ.get("MOONBRIDGE_MAX_AGENTS", "10"))
+STRICT_MODE = os.environ.get("MOONBRIDGE_STRICT", "").strip().lower() in {"1", "true"}
 _ALLOWED_DIRS_ENV = os.environ.get("MOONBRIDGE_ALLOWED_DIRS")
 ALLOWED_DIRS = [
     os.path.realpath(path)
@@ -43,6 +44,24 @@ def _configure_logging() -> None:
         level=getattr(logging, level, logging.WARNING),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+
+def _warn_if_unrestricted() -> None:
+    if ALLOWED_DIRS:
+        return
+    current = os.getcwd()
+    message = (
+        "MOONBRIDGE_ALLOWED_DIRS is not set. Agents can operate in any directory. "
+        f"Set MOONBRIDGE_ALLOWED_DIRS=/path1{os.pathsep}/path2 to restrict. "
+        f"(current: {current})"
+    )
+    if STRICT_MODE:
+        logger.error(message)
+        print(message, file=sys.stderr)
+        sys.exit(1)
+        return
+    logger.warning(message)
+    print(message, file=sys.stderr)
 
 
 def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
@@ -455,6 +474,7 @@ async def run() -> None:
 
 def main() -> None:
     _configure_logging()
+    _warn_if_unrestricted()
     from moonbridge import __version__
     from moonbridge.version_check import check_for_updates
 
