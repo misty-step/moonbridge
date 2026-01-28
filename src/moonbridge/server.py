@@ -455,6 +455,10 @@ async def run() -> None:
 
 def main() -> None:
     _configure_logging()
+    from moonbridge import __version__
+    from moonbridge.version_check import check_for_updates
+
+    check_for_updates(__version__)
     adapter = get_adapter()
     installed, _path = adapter.check_installed()
     if not installed:

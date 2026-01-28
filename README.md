@@ -30,6 +30,24 @@ uvx moonbridge
 
 3. **Use it.** Your MCP client now has `spawn_agent` and `spawn_agents_parallel` tools.
 
+## Updating
+
+Moonbridge checks for updates on startup (cached for 24h). To update manually:
+
+```bash
+# If using uvx (recommended)
+uvx moonbridge --refresh
+
+# If installed as a tool
+uv tool upgrade moonbridge
+```
+
+Disable update checks for CI/automation:
+
+```bash
+export MOONBRIDGE_SKIP_UPDATE_CHECK=1
+```
+
 ## When to Use Moonbridge
 
 | Task | Why Moonbridge |
