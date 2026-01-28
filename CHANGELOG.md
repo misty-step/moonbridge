@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.2.1...moonbridge-v0.3.0) (2026-01-28)
+
+
+### Features
+
+* **adapters:** configurable default adapter via MOONBRIDGE_ADAPTER env var ([#40](https://github.com/misty-step/moonbridge/issues/40)) ([1553dcf](https://github.com/misty-step/moonbridge/commit/1553dcf9ea30c4643b98e054a4fccf473cd68cb9)), closes [#39](https://github.com/misty-step/moonbridge/issues/39)
+
 ## [0.2.1](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.2.0...moonbridge-v0.2.1) (2026-01-28)
 
 
