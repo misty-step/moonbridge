@@ -46,7 +46,10 @@ def _configure_logging() -> None:
 
 
 def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
-    return {key: os.environ[key] for key in adapter.config.safe_env_keys if key in os.environ}
+    env = {key: os.environ[key] for key in adapter.config.safe_env_keys if key in os.environ}
+    if "PATH" not in env and "PATH" in os.environ:
+        env["PATH"] = os.environ["PATH"]
+    return env
 
 
 def _validate_timeout(timeout_seconds: int | None) -> int:
