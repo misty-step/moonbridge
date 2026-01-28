@@ -83,10 +83,10 @@ def mock_popen(mocker):
 @pytest.fixture
 def mock_which_kimi(mocker):
     """Mock shutil.which to find kimi."""
-    return mocker.patch("moonbridge.server.shutil.which", return_value="/usr/local/bin/kimi")
+    return mocker.patch("moonbridge.adapters.kimi.shutil.which", return_value="/usr/local/bin/kimi")
 
 
 @pytest.fixture
 def mock_which_no_kimi(mocker):
     """Mock shutil.which to NOT find kimi."""
-    return mocker.patch("moonbridge.server.shutil.which", return_value=None)
+    return mocker.patch("moonbridge.adapters.kimi.shutil.which", return_value=None)

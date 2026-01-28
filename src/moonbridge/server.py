@@ -7,7 +7,6 @@ import atexit
 import json
 import logging
 import os
-import shutil
 import signal
 import sys
 import time
@@ -19,31 +18,11 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from moonbridge.adapters import CLIAdapter, get_adapter
+
 server = Server("moonbridge")
 
 logger = logging.getLogger("moonbridge")
-
-SAFE_ENV_KEYS = [
-    "PATH",
-    "HOME",
-    "USER",
-    "LANG",
-    "TERM",
-    "SHELL",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "XDG_CACHE_HOME",
-    "LC_ALL",
-    "LC_CTYPE",
-    "SSL_CERT_FILE",
-    "REQUESTS_CA_BUNDLE",
-    "CURL_CA_BUNDLE",
-    "KIMI_CONFIG_PATH",
-]
-AUTH_PATTERNS = ["login required", "unauthorized", "authentication failed", "401", "403"]
 
 DEFAULT_TIMEOUT = int(os.environ.get("MOONBRIDGE_TIMEOUT", "600"))
 MAX_PARALLEL_AGENTS = int(os.environ.get("MOONBRIDGE_MAX_AGENTS", "10"))
@@ -66,8 +45,11 @@ def _configure_logging() -> None:
     )
 
 
-def _safe_env() -> dict[str, str]:
-    return {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
+def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
+    env = {key: os.environ[key] for key in adapter.config.safe_env_keys if key in os.environ}
+    if "PATH" not in env and "PATH" in os.environ:
+        env["PATH"] = os.environ["PATH"]
+    return env
 
 
 def _validate_timeout(timeout_seconds: int | None) -> int:
@@ -96,12 +78,11 @@ def _validate_prompt(prompt: str) -> str:
     return prompt
 
 
-def _build_command(prompt: str, thinking: bool) -> list[str]:
-    cmd = ["kimi", "--print"]
-    if thinking:
-        cmd.append("--thinking")
-    cmd.extend(["--prompt", prompt])
-    return cmd
+def _validate_thinking(adapter: CLIAdapter, thinking: bool) -> bool:
+    """Validate thinking flag against adapter capability."""
+    if thinking and not adapter.config.supports_thinking:
+        raise ValueError(f"{adapter.config.name} adapter does not support thinking mode")
+    return thinking
 
 
 def _terminate_process(proc: Popen[str]) -> None:
@@ -139,11 +120,11 @@ def _untrack_process(proc: Popen[str]) -> None:
             break
 
 
-def _auth_error(stderr: str | None) -> bool:
+def _auth_error(stderr: str | None, adapter: CLIAdapter) -> bool:
     if not stderr:
         return False
     lowered = stderr.lower()
-    return any(pattern in lowered for pattern in AUTH_PATTERNS)
+    return any(pattern in lowered for pattern in adapter.config.auth_patterns)
 
 
 def _result(
@@ -169,7 +150,8 @@ def _result(
     return payload
 
 
-def _run_kimi_sync(
+def _run_cli_sync(
+    adapter: CLIAdapter,
     prompt: str,
     thinking: bool,
     cwd: str,
@@ -177,7 +159,7 @@ def _run_kimi_sync(
     agent_index: int,
 ) -> dict[str, Any]:
     start = time.monotonic()
-    cmd = _build_command(prompt, thinking)
+    cmd = adapter.build_command(prompt, thinking)
     logger.debug("Spawning agent with prompt: %s...", prompt[:100])
     try:
         proc = Popen(
@@ -186,16 +168,16 @@ def _run_kimi_sync(
             stderr=PIPE,
             text=True,
             cwd=cwd,
-            env=_safe_env(),
+            env=_safe_env(adapter),
             start_new_session=True,
         )
     except FileNotFoundError:
         duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error("Kimi CLI not found or not executable")
+        logger.error("%s CLI not found or not executable", adapter.config.name)
         return _result(
             status="error",
             output="",
-            stderr="kimi CLI not found or not executable",
+            stderr=f"{adapter.config.name} CLI not found or not executable",
             returncode=-1,
             duration_ms=duration_ms,
             agent_index=agent_index,
@@ -227,7 +209,7 @@ def _run_kimi_sync(
         stdout, stderr = proc.communicate(timeout=timeout_seconds)
         duration_ms = int((time.monotonic() - start) * 1000)
         stderr_value = stderr or None
-        if _auth_error(stderr_value):
+        if _auth_error(stderr_value, adapter):
             logger.info("Agent %s completed with status: auth_error", agent_index)
             return _result(
                 status="auth_error",
@@ -236,7 +218,7 @@ def _run_kimi_sync(
                 returncode=proc.returncode,
                 duration_ms=duration_ms,
                 agent_index=agent_index,
-                message="Run: kimi login",
+                message=adapter.config.auth_message,
             )
         status = "success" if proc.returncode == 0 else "error"
         logger.info("Agent %s completed with status: %s", agent_index, status)
@@ -280,27 +262,37 @@ def _json_text(payload: Any) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=True))]
 
 
-def _status_check(cwd: str) -> dict[str, Any]:
-    if not shutil.which("kimi"):
-        return {"status": "error", "message": "Kimi CLI not found. Install: uv tool install kimi-cli"}  # noqa: E501
+def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
+    installed, _path = adapter.check_installed()
+    if not installed:
+        return {
+            "status": "error",
+            "message": (
+                f"{adapter.config.name} CLI not found. Install: {adapter.config.install_hint}"
+            ),
+        }
     timeout = min(DEFAULT_TIMEOUT, 60)
-    result = _run_kimi_sync("status check", False, cwd, timeout, 0)
+    result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
     if result["status"] == "auth_error":
-        return {"status": "auth_error", "message": "Run: kimi login"}
+        return {"status": "auth_error", "message": adapter.config.auth_message}
     if result["status"] == "success":
-        return {"status": "success", "message": "Kimi CLI available and authenticated"}
-    return {"status": "error", "message": "Kimi CLI error", "details": result}
+        return {
+            "status": "success",
+            "message": f"{adapter.config.name} CLI available and authenticated",
+        }
+    return {"status": "error", "message": f"{adapter.config.name} CLI error", "details": result}
 
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    adapter = get_adapter()
+    tool_desc = adapter.config.tool_description
+    parallel_desc = f"{tool_desc} Run multiple agents in parallel."
+    status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
     return [
         Tool(
             name="spawn_agent",
-            description=(
-                "Spawn a Kimi K2.5 agent in the current directory. "
-                "Kimi excels at frontend development and visual coding."
-            ),
+            description=tool_desc,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -326,10 +318,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="spawn_agents_parallel",
-            description=(
-                "Spawn multiple Kimi K2.5 agents in parallel. "
-                "Each agent runs independently in the current working directory."
-            ),
+            description=parallel_desc,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -358,7 +347,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="check_status",
-            description="Verify Kimi CLI is installed and authenticated",
+            description=status_desc,
             inputSchema={"type": "object", "properties": {}},
         ),
     ]
@@ -367,16 +356,18 @@ async def list_tools() -> list[Tool]:
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls. Exposed for testing."""
     try:
+        adapter = get_adapter()
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
             prompt = _validate_prompt(arguments["prompt"])
-            thinking = bool(arguments.get("thinking", False))
+            thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
             loop = asyncio.get_running_loop()
             try:
                 result = await loop.run_in_executor(
                     None,
-                    _run_kimi_sync,
+                    _run_cli_sync,
+                    adapter,
                     prompt,
                     thinking,
                     cwd,
@@ -404,12 +395,14 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             tasks = []
             for idx, spec in enumerate(agents):
                 prompt = _validate_prompt(spec["prompt"])
+                thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 tasks.append(
                     loop.run_in_executor(
                         None,
-                        _run_kimi_sync,
+                        _run_cli_sync,
+                        adapter,
                         prompt,
-                        bool(spec.get("thinking", False)),
+                        thinking,
                         cwd,
                         _validate_timeout(spec.get("timeout_seconds")),
                         idx,
@@ -434,7 +427,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             return _json_text(results)
 
         if name == "check_status":
-            return _json_text(_status_check(cwd))
+            return _json_text(_status_check(cwd, adapter))
 
         return _json_text({"status": "error", "message": f"Unknown tool: {name}"})
     except ValueError as exc:
@@ -462,9 +455,11 @@ async def run() -> None:
 
 def main() -> None:
     _configure_logging()
-    if not shutil.which("kimi"):
+    adapter = get_adapter()
+    installed, _path = adapter.check_installed()
+    if not installed:
         print(
-            "Error: Kimi CLI not found. Install: uv tool install kimi-cli",
+            f"Error: {adapter.config.name} CLI not found. Install: {adapter.config.install_hint}",
             file=sys.stderr,
         )
         sys.exit(1)
