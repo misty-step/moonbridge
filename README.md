@@ -2,7 +2,7 @@
 
 **Your MCP client just got a team.**
 
-Spawn Kimi K2.5 agents from Claude Code, Cursor, or any MCP client. Run 5 approaches in parallel for the cost of one Claude request.
+Spawn Kimi K2.5 agents from Claude Code, Cursor, or any MCP client. Run 10 approaches in parallel for the cost of one Claude request.
 
 ```bash
 uvx moonbridge
@@ -52,7 +52,7 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 
 | Task | Why Moonbridge |
 |------|----------------|
-| Parallel exploration | Run 5 approaches simultaneously, pick the best |
+| Parallel exploration | Run 10 approaches simultaneously, pick the best |
 | Frontend/UI work | Kimi excels at visual coding and component design |
 | Tests and documentation | Cost-effective for high-volume tasks |
 | Refactoring | Try multiple strategies in one request |
@@ -64,7 +64,7 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 | Tool | Use case |
 |------|----------|
 | `spawn_agent` | Single task: "Write tests for auth.ts" |
-| `spawn_agents_parallel` | Go wide: 5 agents, 5 approaches, pick the best |
+| `spawn_agents_parallel` | Go wide: 10 agents, 10 approaches, pick the best |
 | `check_status` | Verify Kimi CLI is installed and authenticated |
 
 ### Example: Parallel Exploration
@@ -95,7 +95,7 @@ Three approaches. One request. You choose the winner.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `agents` | array | Yes | List of agent configs (max 5) |
+| `agents` | array | Yes | List of agent configs (max 10) |
 | `agents[].prompt` | string | Yes | Task for this agent |
 | `agents[].thinking` | boolean | No | Enable reasoning for this agent |
 | `agents[].timeout_seconds` | integer | No | Timeout for this agent |
