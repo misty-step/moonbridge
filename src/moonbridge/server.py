@@ -299,8 +299,7 @@ async def list_tools() -> list[Tool]:
             name="spawn_agent",
             description=(
                 "Spawn a Kimi K2.5 agent in the current directory. "
-                "Kimi excels at frontend development, visual coding, and "
-                "can coordinate up to 100 sub-agents via Agent Swarm."
+                "Kimi excels at frontend development and visual coding."
             ),
             inputSchema={
                 "type": "object",
@@ -328,7 +327,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="spawn_agents_parallel",
             description=(
-                "Spawn multiple Kimi K2.5 agents in parallel using Agent Swarm. "
+                "Spawn multiple Kimi K2.5 agents in parallel. "
                 "Each agent runs independently in the current working directory."
             ),
             inputSchema={

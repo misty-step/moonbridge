@@ -1,7 +1,7 @@
 [project]
 name = "moonbridge"
 dynamic = ["version"]
-description = "MCP server bridging Claude Code to Kimi K2.5 Agent Swarm"
+description = "MCP server for spawning Kimi K2.5 agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -36,9 +36,9 @@ dev = [
 moonbridge = "moonbridge.server:main"
 
 [project.urls]
-Homepage = "https://github.com/phaedrus/moonbridge"
-Repository = "https://github.com/phaedrus/moonbridge"
-Issues = "https://github.com/phaedrus/moonbridge/issues"
+Homepage = "https://github.com/misty-step/moonbridge"
+Repository = "https://github.com/misty-step/moonbridge"
+Issues = "https://github.com/misty-step/moonbridge/issues"
 
 [build-system]
 requires = ["hatchling"]

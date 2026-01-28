@@ -1,11 +1,11 @@
 # Moonbridge
 
-MCP server bridging Claude Code to Kimi K2.5 Agent Swarm.
+MCP server for spawning Kimi K2.5 agents.
 
 ## What it does
 
-Moonbridge lets Claude Code delegate tasks to Kimi K2.5 agents through MCP.
-Use it for cost-effective, parallel agent swarms and strong frontend output.
+Moonbridge lets MCP clients delegate tasks to Kimi K2.5 agents.
+Use it for cost-effective parallel execution and strong frontend output.
 
 ## Installation
 
@@ -174,7 +174,7 @@ macOS and Linux only. Windows is not supported.
 | Standard implementation | Codex |
 | Budget-conscious work | Kimi |
 | Frontend/visual coding | Kimi |
-| Complex multi-step | Kimi (Agent Swarm) |
+| Complex multi-step | Kimi |
 | Git-heavy workflows | Codex |
 
 ## License

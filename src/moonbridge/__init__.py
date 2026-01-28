@@ -1,4 +1,4 @@
-"""MCP server bridging Claude Code to Kimi K2.5 Agent Swarm."""
+"""MCP server for spawning Kimi K2.5 agents."""
 
 from __future__ import annotations
 
