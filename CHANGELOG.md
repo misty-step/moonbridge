@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.4.0...moonbridge-v0.4.1) (2026-01-28)
+
+
+### Bug Fixes
+
+* **security:** warn when ALLOWED_DIRS is empty ([#46](https://github.com/misty-step/moonbridge/issues/46)) ([d9a9e0f](https://github.com/misty-step/moonbridge/commit/d9a9e0f65d3e0b556546ae277d4f517c5119dbd1))
+
 ## [0.4.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.3.0...moonbridge-v0.4.0) (2026-01-28)
 
 
