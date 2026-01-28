@@ -1,111 +1,93 @@
 # Moonbridge
 
-MCP server for spawning Kimi K2.5 agents.
+**Your MCP client just got a team.**
 
-## What it does
-
-Moonbridge lets MCP clients delegate tasks to Kimi K2.5 agents.
-Use it for cost-effective parallel execution and strong frontend output.
-
-## Installation
-
-```bash
-pip install moonbridge
-```
-
-Or run without install:
+Spawn Kimi K2.5 agents from Claude Code, Cursor, or any MCP client. Run 5 approaches in parallel for the cost of one Claude request.
 
 ```bash
 uvx moonbridge
 ```
 
-## Prerequisites
+## Quick Start
 
-1. Install Kimi CLI:
+1. **Install Kimi CLI and authenticate:**
    ```bash
-   uv tool install --python 3.13 kimi-cli
-   ```
-2. Authenticate:
-   ```bash
-   kimi login
+   uv tool install --python 3.13 kimi-cli && kimi login
    ```
 
-## MCP configuration
+2. **Add to MCP config** (`~/.mcp.json`):
+   ```json
+   {
+     "mcpServers": {
+       "moonbridge": {
+         "type": "stdio",
+         "command": "uvx",
+         "args": ["moonbridge"]
+       }
+     }
+   }
+   ```
 
-`~/.mcp.json`:
+3. **Use it.** Your MCP client now has `spawn_agent` and `spawn_agents_parallel` tools.
 
-```json
-{
-  "mcpServers": {
-    "moonbridge": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["moonbridge"]
-    }
-  }
-}
-```
+## When to Use Moonbridge
 
-If installed globally:
+| Task | Why Moonbridge |
+|------|----------------|
+| Parallel exploration | Run 5 approaches simultaneously, pick the best |
+| Frontend/UI work | Kimi excels at visual coding and component design |
+| Tests and documentation | Cost-effective for high-volume tasks |
+| Refactoring | Try multiple strategies in one request |
 
-```json
-{
-  "mcpServers": {
-    "moonbridge": {
-      "type": "stdio",
-      "command": "moonbridge"
-    }
-  }
-}
-```
+**Best for:** Tasks that benefit from parallel execution or volume.
 
 ## Tools
 
-### spawn_agent
+| Tool | Use case |
+|------|----------|
+| `spawn_agent` | Single task: "Write tests for auth.ts" |
+| `spawn_agents_parallel` | Go wide: 5 agents, 5 approaches, pick the best |
+| `check_status` | Verify Kimi CLI is installed and authenticated |
 
-Spawn a single Kimi agent in the current working directory.
-
-```json
-{
-  "prompt": "Create a React component for user authentication",
-  "thinking": false,
-  "timeout_seconds": 600
-}
-```
-
-### spawn_agents_parallel
-
-Spawn multiple agents in parallel.
+### Example: Parallel Exploration
 
 ```json
 {
   "agents": [
-    {"prompt": "Write unit tests for auth.ts"},
-    {"prompt": "Write integration tests for auth flow", "thinking": true}
+    {"prompt": "Refactor to React hooks"},
+    {"prompt": "Refactor to Zustand"},
+    {"prompt": "Refactor to Redux Toolkit"}
   ]
 }
 ```
 
-### check_status
+Three approaches. One request. You choose the winner.
 
-Verify Kimi CLI is installed and authenticated.
+### Tool Parameters
 
-```json
-{}
-```
+**`spawn_agent`**
 
-## Environment variables
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prompt` | string | Yes | Task description for the agent |
+| `thinking` | boolean | No | Enable reasoning mode (default: false) |
+| `timeout_seconds` | integer | No | Override default timeout (30-3600) |
 
-- `MOONBRIDGE_TIMEOUT`: default timeout seconds (30-3600)
-- `MOONBRIDGE_MAX_AGENTS`: max parallel agents
-- `MOONBRIDGE_ALLOWED_DIRS`: colon-separated allowlist of working dirs
+**`spawn_agents_parallel`**
 
-## Response format
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agents` | array | Yes | List of agent configs (max 5) |
+| `agents[].prompt` | string | Yes | Task for this agent |
+| `agents[].thinking` | boolean | No | Enable reasoning for this agent |
+| `agents[].timeout_seconds` | integer | No | Timeout for this agent |
+
+## Response Format
 
 All tools return JSON with these fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+|-------|------|-------------|
 | `status` | string | `success`, `error`, `timeout`, `auth_error`, or `cancelled` |
 | `output` | string | stdout from Kimi agent |
 | `stderr` | string\|null | stderr if any |
@@ -113,6 +95,17 @@ All tools return JSON with these fields:
 | `duration_ms` | int | Execution time in milliseconds |
 | `agent_index` | int | Agent index (0 for single, 0-N for parallel) |
 | `message` | string? | Human-readable error context (when applicable) |
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `MOONBRIDGE_TIMEOUT` | Default timeout in seconds (30-3600) |
+| `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
+| `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |
+| `MOONBRIDGE_LOG_LEVEL` | Set to `DEBUG` for verbose logging |
 
 ## Troubleshooting
 
@@ -163,19 +156,9 @@ Enable verbose logging:
 export MOONBRIDGE_LOG_LEVEL=DEBUG
 ```
 
-## Platform support
+## Platform Support
 
 macOS and Linux only. Windows is not supported.
-
-## When to use Kimi vs Codex
-
-| Task | Recommendation |
-| --- | --- |
-| Standard implementation | Codex |
-| Budget-conscious work | Kimi |
-| Frontend/visual coding | Kimi |
-| Complex multi-step | Kimi |
-| Git-heavy workflows | Codex |
 
 ## License
 

@@ -1,9 +1,8 @@
 name: publish
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: write  # needed for creating releases
