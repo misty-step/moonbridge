@@ -75,6 +75,13 @@ def _validate_prompt(prompt: str) -> str:
     return prompt
 
 
+def _validate_thinking(adapter: CLIAdapter, thinking: bool) -> bool:
+    """Validate thinking flag against adapter capability."""
+    if thinking and not adapter.config.supports_thinking:
+        raise ValueError(f"{adapter.config.name} adapter does not support thinking mode")
+    return thinking
+
+
 def _terminate_process(proc: Popen[str]) -> None:
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -275,13 +282,14 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    adapter = get_adapter()
+    tool_desc = adapter.config.tool_description
+    parallel_desc = f"{tool_desc} Run multiple agents in parallel."
+    status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
     return [
         Tool(
             name="spawn_agent",
-            description=(
-                "Spawn a Kimi K2.5 agent in the current directory. "
-                "Kimi excels at frontend development and visual coding."
-            ),
+            description=tool_desc,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -307,10 +315,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="spawn_agents_parallel",
-            description=(
-                "Spawn multiple Kimi K2.5 agents in parallel. "
-                "Each agent runs independently in the current working directory."
-            ),
+            description=parallel_desc,
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -339,7 +344,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="check_status",
-            description="Verify Kimi CLI is installed and authenticated",
+            description=status_desc,
             inputSchema={"type": "object", "properties": {}},
         ),
     ]
@@ -352,7 +357,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
             prompt = _validate_prompt(arguments["prompt"])
-            thinking = bool(arguments.get("thinking", False))
+            thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
             loop = asyncio.get_running_loop()
             try:
@@ -387,13 +392,14 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             tasks = []
             for idx, spec in enumerate(agents):
                 prompt = _validate_prompt(spec["prompt"])
+                thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 tasks.append(
                     loop.run_in_executor(
                         None,
                         _run_cli_sync,
                         adapter,
                         prompt,
-                        bool(spec.get("thinking", False)),
+                        thinking,
                         cwd,
                         _validate_timeout(spec.get("timeout_seconds")),
                         idx,

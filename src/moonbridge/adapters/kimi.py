@@ -9,6 +9,10 @@ class KimiAdapter:
     config = AdapterConfig(
         name="kimi",
         cli_command="kimi",
+        tool_description=(
+            "Spawn a Kimi K2.5 agent in the current directory. "
+            "Kimi excels at frontend development and visual coding."
+        ),
         safe_env_keys=(
             "PATH",
             "HOME",
@@ -36,12 +40,12 @@ class KimiAdapter:
     )
 
     def build_command(self, prompt: str, thinking: bool) -> list[str]:
-        cmd = ["kimi", "--print"]
+        cmd = [self.config.cli_command, "--print"]
         if thinking:
             cmd.append("--thinking")
         cmd.extend(["--prompt", prompt])
         return cmd
 
     def check_installed(self) -> tuple[bool, str | None]:
-        path = shutil.which("kimi")
+        path = shutil.which(self.config.cli_command)
         return (path is not None, path)

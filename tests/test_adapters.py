@@ -43,7 +43,7 @@ def test_get_adapter_by_name():
 
 
 def test_get_adapter_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown adapter"):
+    with pytest.raises(ValueError, match="Unknown adapter.*Available:"):
         get_adapter("nonexistent")
 
 
@@ -58,3 +58,4 @@ def test_kimi_adapter_config_values():
     assert adapter.config.auth_message == "Run: kimi login"
     assert adapter.config.supports_thinking is True
     assert "PATH" in adapter.config.safe_env_keys
+    assert "Kimi" in adapter.config.tool_description

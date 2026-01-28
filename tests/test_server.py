@@ -134,3 +134,31 @@ async def test_max_agents_limit_enforced(monkeypatch):
 
     assert payload["status"] == "error"
     assert "Max" in payload["message"]
+
+
+def test_validate_thinking_allowed():
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    assert server_module._validate_thinking(adapter, True) is True
+    assert server_module._validate_thinking(adapter, False) is False
+
+
+def test_validate_thinking_not_supported(mocker):
+    from moonbridge.adapters.base import AdapterConfig
+
+    mock_adapter = mocker.Mock()
+    mock_adapter.config = AdapterConfig(
+        name="test",
+        cli_command="test",
+        tool_description="Test adapter",
+        safe_env_keys=(),
+        auth_patterns=(),
+        auth_message="",
+        install_hint="",
+        supports_thinking=False,
+    )
+    with pytest.raises(ValueError, match="does not support thinking"):
+        server_module._validate_thinking(mock_adapter, True)
+    # False should pass even when not supported
+    assert server_module._validate_thinking(mock_adapter, False) is False

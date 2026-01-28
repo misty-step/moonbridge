@@ -8,6 +8,7 @@ class AdapterConfig:
 
     name: str
     cli_command: str
+    tool_description: str
     safe_env_keys: tuple[str, ...]
     auth_patterns: tuple[str, ...]
     auth_message: str
