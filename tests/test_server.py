@@ -1,5 +1,6 @@
 import importlib
 import json
+import logging
 import threading
 import time
 from subprocess import TimeoutExpired
@@ -162,3 +163,66 @@ def test_validate_thinking_not_supported(mocker):
         server_module._validate_thinking(mock_adapter, True)
     # False should pass even when not supported
     assert server_module._validate_thinking(mock_adapter, False) is False
+
+
+def test_warn_if_unrestricted_emits_warning(monkeypatch, capsys, caplog):
+    monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
+    message = (
+        "MOONBRIDGE_ALLOWED_DIRS is not set. Agents can operate in any directory. "
+        f"Set MOONBRIDGE_ALLOWED_DIRS=/path1{server_module.os.pathsep}/path2 to restrict. "
+        "(current: /workdir)"
+    )
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
+    caplog.set_level(logging.WARNING, logger="moonbridge")
+
+    server_module._warn_if_unrestricted()
+
+    captured = capsys.readouterr()
+    assert message in captured.err
+    assert any(
+        record.levelno == logging.WARNING and record.message == message for record in caplog.records
+    )
+
+
+def test_warn_if_unrestricted_allows_none_allowed_dirs(monkeypatch, capsys, caplog):
+    monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
+    message = (
+        "MOONBRIDGE_ALLOWED_DIRS is not set. Agents can operate in any directory. "
+        f"Set MOONBRIDGE_ALLOWED_DIRS=/path1{server_module.os.pathsep}/path2 to restrict. "
+        "(current: /workdir)"
+    )
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", None)
+    caplog.set_level(logging.WARNING, logger="moonbridge")
+
+    server_module._warn_if_unrestricted()
+
+    captured = capsys.readouterr()
+    assert message in captured.err
+    assert any(
+        record.levelno == logging.WARNING and record.message == message for record in caplog.records
+    )
+
+
+def test_warn_if_unrestricted_strict_exits(monkeypatch, capsys, caplog, mocker):
+    monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
+    monkeypatch.setattr(server_module, "STRICT_MODE", True)
+    exit_mock = mocker.patch("moonbridge.server.sys.exit")
+    caplog.set_level(logging.ERROR, logger="moonbridge")
+
+    server_module._warn_if_unrestricted()
+
+    captured = capsys.readouterr()
+    assert "(current: /workdir)" in captured.err
+    exit_mock.assert_called_once_with(1)
+
+
+def test_warn_if_unrestricted_no_warning_when_restricted(monkeypatch, capsys, caplog):
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", ["/tmp"])
+    caplog.set_level(logging.WARNING, logger="moonbridge")
+
+    server_module._warn_if_unrestricted()
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert not caplog.records
