@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.3.0...moonbridge-v0.4.0) (2026-01-28)
+
+
+### Features
+
+* add startup version check to notify users of updates ([#43](https://github.com/misty-step/moonbridge/issues/43)) ([32c09ee](https://github.com/misty-step/moonbridge/commit/32c09ee1325267f73504c56cdc1b7af73ce60fa7))
+
 ## [0.3.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.2.1...moonbridge-v0.3.0) (2026-01-28)
 
 
