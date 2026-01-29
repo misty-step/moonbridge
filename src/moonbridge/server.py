@@ -34,7 +34,6 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
-GLOBAL_MODEL = os.environ.get("MOONBRIDGE_MODEL")
 
 _active_processes: set[weakref.ref[Popen[str]]] = set()
 
@@ -112,7 +111,7 @@ def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
     adapter_env = f"MOONBRIDGE_{adapter.config.name.upper()}_MODEL"
     if adapter_model := os.environ.get(adapter_env):
         return adapter_model
-    return GLOBAL_MODEL
+    return os.environ.get("MOONBRIDGE_MODEL")
 
 
 def _terminate_process(proc: Popen[str]) -> None:
