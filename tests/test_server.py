@@ -50,6 +50,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
         cwd: str,
         timeout_seconds: int,
         agent_index: int,
+        model: str | None = None,
     ) -> dict[str, Any]:
         with lock:
             starts.append(time.monotonic())
@@ -162,18 +163,25 @@ async def test_auth_detection_returns_actionable_message(mock_popen: Any) -> Non
 
 @pytest.mark.asyncio
 async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        server_module,
-        "_run_cli_sync",
-        lambda *args, **kwargs: {
+    def fake_run(
+        _adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        return {
             "status": "success",
             "output": "ok",
             "stderr": None,
             "returncode": 0,
             "duration_ms": 1,
             "agent_index": 0,
-        },
-    )
+        }
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
 
     result = await server_module.handle_tool("check_status", {})
     payload = json.loads(result[0].text)
@@ -585,3 +593,119 @@ def test_cleanup_processes_handles_dead_weakrefs(
 
     terminate.assert_not_called()
     assert len(server_module._active_processes) == 0
+
+
+# Model resolution tests
+
+
+def test_resolve_model_param_takes_precedence(monkeypatch: Any) -> None:
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.setenv("MOONBRIDGE_MODEL", "global-model")
+    monkeypatch.setenv("MOONBRIDGE_KIMI_MODEL", "adapter-model")
+
+    result = server_module._resolve_model(adapter, "param-model")
+
+    assert result == "param-model"
+
+
+def test_resolve_model_adapter_env_takes_precedence_over_global(monkeypatch: Any) -> None:
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.setenv("MOONBRIDGE_MODEL", "global-model")
+    monkeypatch.setenv("MOONBRIDGE_KIMI_MODEL", "adapter-model")
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result == "adapter-model"
+
+
+def test_resolve_model_falls_back_to_global(monkeypatch: Any) -> None:
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.setattr(server_module, "GLOBAL_MODEL", "global-model")
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result == "global-model"
+
+
+def test_resolve_model_returns_none_when_no_config(monkeypatch: Any) -> None:
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.setattr(server_module, "GLOBAL_MODEL", None)
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result is None
+
+
+def test_resolve_model_codex_adapter_env(monkeypatch: Any) -> None:
+    from moonbridge.adapters.codex import CodexAdapter
+
+    adapter = CodexAdapter()
+    monkeypatch.setenv("MOONBRIDGE_CODEX_MODEL", "gpt-5.2-codex-high")
+    monkeypatch.setattr(server_module, "GLOBAL_MODEL", None)
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result == "gpt-5.2-codex-high"
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_with_model_param(mock_popen: Any) -> None:
+    result = await server_module.handle_tool(
+        "spawn_agent", {"prompt": "Hello", "model": "kimi-k2.5"}
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    args, _kwargs = mock_popen.call_args
+    assert "-m" in args[0]
+    assert "kimi-k2.5" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(
+        _adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        calls.append({"prompt": prompt, "model": model, "agent_index": agent_index})
+        return {
+            "status": "success",
+            "output": prompt,
+            "stderr": None,
+            "returncode": 0,
+            "duration_ms": 1,
+            "agent_index": agent_index,
+        }
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+    monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
+
+    await server_module.handle_tool(
+        "spawn_agents_parallel",
+        {
+            "agents": [
+                {"prompt": "one", "model": "model-a"},
+                {"prompt": "two", "model": "model-b"},
+            ]
+        },
+    )
+
+    assert calls[0]["model"] == "model-a"
+    assert calls[1]["model"] == "model-b"

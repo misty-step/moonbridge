@@ -17,6 +17,18 @@ def test_kimi_adapter_build_command_with_thinking():
     assert cmd == ["kimi", "--print", "--thinking", "--prompt", "hello world"]
 
 
+def test_kimi_adapter_build_command_with_model():
+    adapter = KimiAdapter()
+    cmd = adapter.build_command("hello world", thinking=False, model="kimi-k2.5")
+    assert cmd == ["kimi", "--print", "-m", "kimi-k2.5", "--prompt", "hello world"]
+
+
+def test_kimi_adapter_build_command_with_thinking_and_model():
+    adapter = KimiAdapter()
+    cmd = adapter.build_command("hello world", thinking=True, model="kimi-k2.5")
+    assert cmd == ["kimi", "--print", "--thinking", "-m", "kimi-k2.5", "--prompt", "hello world"]
+
+
 def test_kimi_adapter_check_installed(mocker):
     mocker.patch("shutil.which", return_value="/usr/local/bin/kimi")
     adapter = KimiAdapter()
@@ -95,7 +107,7 @@ def test_kimi_adapter_config_values():
 def test_codex_adapter_build_command_basic():
     adapter = CodexAdapter()
     cmd = adapter.build_command("hello world", thinking=False)
-    assert cmd == ["codex", "exec", "--full-auto", "hello world"]
+    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "hello world"]
 
 
 def test_codex_adapter_build_command_thinking_ignored():
@@ -103,7 +115,13 @@ def test_codex_adapter_build_command_thinking_ignored():
     adapter = CodexAdapter()
     cmd = adapter.build_command("test prompt", thinking=True)
     # Same command - thinking validation happens in server.py
-    assert cmd == ["codex", "exec", "--full-auto", "test prompt"]
+    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "test prompt"]
+
+
+def test_codex_adapter_build_command_with_model():
+    adapter = CodexAdapter()
+    cmd = adapter.build_command("hello world", thinking=False, model="gpt-5.2-codex-high")
+    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "-m", "gpt-5.2-codex-high", "hello world"]
 
 
 def test_codex_adapter_check_installed(mocker):

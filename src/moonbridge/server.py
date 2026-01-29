@@ -34,6 +34,7 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
+GLOBAL_MODEL = os.environ.get("MOONBRIDGE_MODEL")
 
 _active_processes: set[weakref.ref[Popen[str]]] = set()
 
@@ -102,6 +103,16 @@ def _validate_thinking(adapter: CLIAdapter, thinking: bool) -> bool:
     if thinking and not adapter.config.supports_thinking:
         raise ValueError(f"{adapter.config.name} adapter does not support thinking mode")
     return thinking
+
+
+def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
+    """Resolve model: param > adapter env > global env > None."""
+    if model_param:
+        return model_param
+    adapter_env = f"MOONBRIDGE_{adapter.config.name.upper()}_MODEL"
+    if adapter_model := os.environ.get(adapter_env):
+        return adapter_model
+    return GLOBAL_MODEL
 
 
 def _terminate_process(proc: Popen[str]) -> None:
@@ -176,9 +187,10 @@ def _run_cli_sync(
     cwd: str,
     timeout_seconds: int,
     agent_index: int,
+    model: str | None = None,
 ) -> dict[str, Any]:
     start = time.monotonic()
-    cmd = adapter.build_command(prompt, thinking)
+    cmd = adapter.build_command(prompt, thinking, model)
     logger.debug("Spawning agent with prompt: %s...", prompt[:100])
     try:
         proc = Popen(
@@ -331,6 +343,13 @@ async def list_tools() -> list[Tool]:
                         "minimum": 30,
                         "maximum": 3600,
                     },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Model to use (e.g., 'gpt-5.2-codex-high', 'kimi-k2.5'). "
+                            "Falls back to MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
+                        ),
+                    },
                 },
                 "required": ["prompt"],
             },
@@ -355,6 +374,13 @@ async def list_tools() -> list[Tool]:
                                     "default": DEFAULT_TIMEOUT,
                                     "minimum": 30,
                                     "maximum": 3600,
+                                },
+                                "model": {
+                                    "type": "string",
+                                    "description": (
+                                        "Model to use. Falls back to "
+                                        "MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
+                                    ),
                                 },
                             },
                             "required": ["prompt"],
@@ -381,6 +407,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             prompt = _validate_prompt(arguments["prompt"])
             thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
+            model = _resolve_model(adapter, arguments.get("model"))
             loop = asyncio.get_running_loop()
             try:
                 result = await loop.run_in_executor(
@@ -392,6 +419,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     cwd,
                     timeout_seconds,
                     0,
+                    model,
                 )
             except asyncio.CancelledError:
                 return _json_text(
@@ -415,6 +443,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             for idx, spec in enumerate(agents):
                 prompt = _validate_prompt(spec["prompt"])
                 thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
+                model = _resolve_model(adapter, spec.get("model"))
                 tasks.append(
                     loop.run_in_executor(
                         None,
@@ -425,6 +454,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                         cwd,
                         _validate_timeout(spec.get("timeout_seconds")),
                         idx,
+                        model,
                     )
                 )
             try:

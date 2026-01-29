@@ -39,10 +39,12 @@ class KimiAdapter:
         supports_thinking=True,
     )
 
-    def build_command(self, prompt: str, thinking: bool) -> list[str]:
+    def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
         cmd = [self.config.cli_command, "--print"]
         if thinking:
             cmd.append("--thinking")
+        if model:
+            cmd.extend(["-m", model])
         cmd.extend(["--prompt", prompt])
         return cmd
 

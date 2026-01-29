@@ -49,18 +49,23 @@ class CodexAdapter:
         supports_thinking=False,
     )
 
-    def build_command(self, prompt: str, thinking: bool) -> list[str]:
+    def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
         """Build Codex CLI command.
 
         Args:
             prompt: Task prompt for the agent.
             thinking: Ignored - Codex doesn't support thinking mode.
                       Validation happens in server.py.
+            model: Model to use (e.g., 'gpt-5.2-codex-high'). Optional.
 
         Returns:
-            Command list: ["codex", "exec", "--full-auto", "<prompt>"]
+            Command list: ["codex", "exec", "--skip-git-repo-check", "--full-auto", ...]
         """
-        return [self.config.cli_command, "exec", "--full-auto", prompt]
+        cmd = [self.config.cli_command, "exec", "--skip-git-repo-check", "--full-auto"]
+        if model:
+            cmd.extend(["-m", model])
+        cmd.append(prompt)
+        return cmd
 
     def check_installed(self) -> tuple[bool, str | None]:
         """Check if Codex CLI is installed."""

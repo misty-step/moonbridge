@@ -22,7 +22,7 @@ class CLIAdapter(Protocol):
 
     config: AdapterConfig
 
-    def build_command(self, prompt: str, thinking: bool) -> list[str]:
+    def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
         """Build CLI command for execution."""
         ...
 
