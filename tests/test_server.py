@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from subprocess import TimeoutExpired
+from typing import Any
 
 import pytest
 
@@ -12,7 +13,7 @@ server_module = importlib.import_module("moonbridge.server")
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_calls_kimi_cli(mock_popen):
+async def test_spawn_agent_calls_kimi_cli(mock_popen: Any) -> None:
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
     payload = json.loads(result[0].text)
 
@@ -23,7 +24,7 @@ async def test_spawn_agent_calls_kimi_cli(mock_popen):
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_thinking_adds_flag(mock_popen):
+async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello", "thinking": True})
     payload = json.loads(result[0].text)
 
@@ -33,12 +34,19 @@ async def test_spawn_agent_thinking_adds_flag(mock_popen):
 
 
 @pytest.mark.asyncio
-async def test_spawn_agents_parallel_runs_concurrently(monkeypatch):
+async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None:
     starts: list[float] = []
     lock = threading.Lock()
     event = threading.Event()
 
-    def fake_run(_adapter, prompt, thinking, cwd, timeout_seconds, agent_index):
+    def fake_run(
+        _adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+    ) -> dict[str, Any]:
         with lock:
             starts.append(time.monotonic())
             if len(starts) == 2:
@@ -67,7 +75,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_timeout_handling_returns_error(mock_popen, mocker):
+async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> None:
     process = mock_popen.return_value
     process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
     mocker.patch("moonbridge.server.os.killpg")
@@ -83,7 +91,72 @@ async def test_timeout_handling_returns_error(mock_popen, mocker):
 
 
 @pytest.mark.asyncio
-async def test_auth_detection_returns_actionable_message(mock_popen):
+async def test_file_not_found_returns_error(mock_popen: Any) -> None:
+    mock_popen.side_effect = FileNotFoundError
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "CLI not found" in payload["stderr"]
+    assert payload["returncode"] == -1
+
+
+@pytest.mark.asyncio
+async def test_permission_error_returns_error(mock_popen: Any) -> None:
+    mock_popen.side_effect = PermissionError("no execute")
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "Permission denied" in payload["stderr"]
+    assert payload["returncode"] == -1
+
+
+@pytest.mark.asyncio
+async def test_os_error_returns_error(mock_popen: Any) -> None:
+    mock_popen.side_effect = OSError("boom")
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "Failed to start process" in payload["stderr"]
+    assert payload["returncode"] == -1
+
+
+@pytest.mark.asyncio
+async def test_nonzero_exit_returns_error_status(mock_popen: Any) -> None:
+    process = mock_popen.return_value
+    process.communicate.return_value = ("ok", "some error")
+    process.returncode = 2
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert payload["stderr"] == "some error"
+    assert payload["returncode"] == 2
+
+
+@pytest.mark.asyncio
+async def test_exception_during_communicate(mock_popen: Any, mocker: Any) -> None:
+    process = mock_popen.return_value
+    process.communicate.side_effect = RuntimeError("boom")
+    process.wait.return_value = None
+    mocker.patch("moonbridge.server.os.killpg")
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert payload["stderr"] == "boom"
+    assert payload["returncode"] == -1
+
+
+@pytest.mark.asyncio
+async def test_auth_detection_returns_actionable_message(mock_popen: Any) -> None:
     process = mock_popen.return_value
     process.communicate.return_value = ("", "Authentication failed")
     process.returncode = 1
@@ -96,7 +169,7 @@ async def test_auth_detection_returns_actionable_message(mock_popen):
 
 
 @pytest.mark.asyncio
-async def test_check_status_installed(mock_which_kimi, monkeypatch):
+async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) -> None:
     monkeypatch.setattr(
         server_module,
         "_run_cli_sync",
@@ -117,7 +190,7 @@ async def test_check_status_installed(mock_which_kimi, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_check_status_not_installed(mock_which_no_kimi):
+async def test_check_status_not_installed(mock_which_no_kimi: Any) -> None:
     result = await server_module.handle_tool("check_status", {})
     payload = json.loads(result[0].text)
 
@@ -125,7 +198,7 @@ async def test_check_status_not_installed(mock_which_no_kimi):
 
 
 @pytest.mark.asyncio
-async def test_max_agents_limit_enforced(monkeypatch):
+async def test_max_agents_limit_enforced(monkeypatch: Any) -> None:
     monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 1)
 
     result = await server_module.handle_tool(
@@ -138,7 +211,7 @@ async def test_max_agents_limit_enforced(monkeypatch):
     assert "Max" in payload["message"]
 
 
-def test_validate_thinking_allowed():
+def test_validate_thinking_allowed() -> None:
     from moonbridge.adapters.kimi import KimiAdapter
 
     adapter = KimiAdapter()
@@ -146,7 +219,7 @@ def test_validate_thinking_allowed():
     assert server_module._validate_thinking(adapter, False) is False
 
 
-def test_validate_thinking_not_supported(mocker):
+def test_validate_thinking_not_supported(mocker: Any) -> None:
     from moonbridge.adapters.base import AdapterConfig
 
     mock_adapter = mocker.Mock()
@@ -166,7 +239,11 @@ def test_validate_thinking_not_supported(mocker):
     assert server_module._validate_thinking(mock_adapter, False) is False
 
 
-def test_warn_if_unrestricted_emits_warning(monkeypatch, capsys, caplog):
+def test_warn_if_unrestricted_emits_warning(
+    monkeypatch: Any,
+    capsys: Any,
+    caplog: Any,
+) -> None:
     monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
     message = (
         "MOONBRIDGE_ALLOWED_DIRS is not set. Agents can operate in any directory. "
@@ -185,7 +262,11 @@ def test_warn_if_unrestricted_emits_warning(monkeypatch, capsys, caplog):
     )
 
 
-def test_warn_if_unrestricted_allows_none_allowed_dirs(monkeypatch, capsys, caplog):
+def test_warn_if_unrestricted_allows_none_allowed_dirs(
+    monkeypatch: Any,
+    capsys: Any,
+    caplog: Any,
+) -> None:
     monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
     message = (
         "MOONBRIDGE_ALLOWED_DIRS is not set. Agents can operate in any directory. "
@@ -204,7 +285,12 @@ def test_warn_if_unrestricted_allows_none_allowed_dirs(monkeypatch, capsys, capl
     )
 
 
-def test_warn_if_unrestricted_strict_exits(monkeypatch, capsys, caplog, mocker):
+def test_warn_if_unrestricted_strict_exits(
+    monkeypatch: Any,
+    capsys: Any,
+    caplog: Any,
+    mocker: Any,
+) -> None:
     monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
     monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
     monkeypatch.setattr(server_module, "STRICT_MODE", True)
@@ -218,7 +304,11 @@ def test_warn_if_unrestricted_strict_exits(monkeypatch, capsys, caplog, mocker):
     exit_mock.assert_called_once_with(1)
 
 
-def test_warn_if_unrestricted_no_warning_when_restricted(monkeypatch, capsys, caplog):
+def test_warn_if_unrestricted_no_warning_when_restricted(
+    monkeypatch: Any,
+    capsys: Any,
+    caplog: Any,
+) -> None:
     monkeypatch.setattr(server_module, "ALLOWED_DIRS", ["/tmp"])
     caplog.set_level(logging.WARNING, logger="moonbridge")
 
@@ -229,32 +319,32 @@ def test_warn_if_unrestricted_no_warning_when_restricted(monkeypatch, capsys, ca
     assert not caplog.records
 
 
-def test_validate_timeout_default(monkeypatch):
+def test_validate_timeout_default(monkeypatch: Any) -> None:
     monkeypatch.setattr(server_module, "DEFAULT_TIMEOUT", 300)
     assert server_module._validate_timeout(None) == 300
 
 
-def test_validate_timeout_valid_bounds():
+def test_validate_timeout_valid_bounds() -> None:
     for value in (30, 600, 3600):
         assert server_module._validate_timeout(value) == value
 
 
-def test_validate_timeout_too_low():
+def test_validate_timeout_too_low() -> None:
     with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
         server_module._validate_timeout(29)
 
 
-def test_validate_timeout_too_high():
+def test_validate_timeout_too_high() -> None:
     with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
         server_module._validate_timeout(3601)
 
 
-def test_validate_cwd_no_restrictions(monkeypatch, tmp_path):
+def test_validate_cwd_no_restrictions(monkeypatch: Any, tmp_path: Any) -> None:
     monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
     assert server_module._validate_cwd(str(tmp_path)) == os.path.realpath(tmp_path)
 
 
-def test_validate_cwd_with_allowed_dirs(monkeypatch, tmp_path):
+def test_validate_cwd_with_allowed_dirs(monkeypatch: Any, tmp_path: Any) -> None:
     allowed_dir = tmp_path / "allowed"
     allowed_dir.mkdir()
     inside = allowed_dir / "inside"
@@ -264,7 +354,7 @@ def test_validate_cwd_with_allowed_dirs(monkeypatch, tmp_path):
     assert server_module._validate_cwd(str(inside)) == os.path.realpath(inside)
 
 
-def test_validate_cwd_rejects_outside(monkeypatch, tmp_path):
+def test_validate_cwd_rejects_outside(monkeypatch: Any, tmp_path: Any) -> None:
     allowed_dir = tmp_path / "allowed"
     allowed_dir.mkdir()
     outside = tmp_path / "outside"
@@ -275,7 +365,7 @@ def test_validate_cwd_rejects_outside(monkeypatch, tmp_path):
         server_module._validate_cwd(str(outside))
 
 
-def test_validate_cwd_subdirectory_allowed(monkeypatch, tmp_path):
+def test_validate_cwd_subdirectory_allowed(monkeypatch: Any, tmp_path: Any) -> None:
     allowed_dir = tmp_path / "allowed"
     subdir = allowed_dir / "nested"
     subdir.mkdir(parents=True)
@@ -284,7 +374,7 @@ def test_validate_cwd_subdirectory_allowed(monkeypatch, tmp_path):
     assert server_module._validate_cwd(str(subdir)) == os.path.realpath(subdir)
 
 
-def test_validate_cwd_symlink_resolution(monkeypatch, tmp_path):
+def test_validate_cwd_symlink_resolution(monkeypatch: Any, tmp_path: Any) -> None:
     allowed_dir = tmp_path / "allowed"
     target_dir = allowed_dir / "target"
     target_dir.mkdir(parents=True)
@@ -295,7 +385,7 @@ def test_validate_cwd_symlink_resolution(monkeypatch, tmp_path):
     assert server_module._validate_cwd(str(symlink_path)) == os.path.realpath(symlink_path)
 
 
-def test_validate_cwd_default_cwd(monkeypatch, tmp_path):
+def test_validate_cwd_default_cwd(monkeypatch: Any, tmp_path: Any) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     monkeypatch.setattr(server_module.os, "getcwd", lambda: str(cwd))
@@ -304,33 +394,33 @@ def test_validate_cwd_default_cwd(monkeypatch, tmp_path):
     assert server_module._validate_cwd(None) == os.path.realpath(cwd)
 
 
-def test_validate_prompt_empty_string():
+def test_validate_prompt_empty_string() -> None:
     with pytest.raises(ValueError, match="prompt cannot be empty"):
         server_module._validate_prompt("")
 
 
-def test_validate_prompt_whitespace_only():
+def test_validate_prompt_whitespace_only() -> None:
     with pytest.raises(ValueError, match="prompt cannot be empty"):
         server_module._validate_prompt("   ")
 
 
-def test_validate_prompt_valid():
+def test_validate_prompt_valid() -> None:
     assert server_module._validate_prompt("test prompt") == "test prompt"
 
 
-def test_validate_prompt_max_length():
+def test_validate_prompt_max_length() -> None:
     max_len = server_module.MAX_PROMPT_LENGTH
     prompt = "a" * max_len
     assert server_module._validate_prompt(prompt) == prompt
 
 
-def test_validate_prompt_exceeds_max():
+def test_validate_prompt_exceeds_max() -> None:
     max_len = server_module.MAX_PROMPT_LENGTH
     with pytest.raises(ValueError, match=f"prompt exceeds {max_len} characters"):
         server_module._validate_prompt("a" * (max_len + 1))
 
 
-def test_validate_cwd_symlink_escape(monkeypatch, tmp_path):
+def test_validate_cwd_symlink_escape(monkeypatch: Any, tmp_path: Any) -> None:
     """Symlink inside allowed pointing outside should be rejected."""
     allowed_dir = tmp_path / "allowed"
     allowed_dir.mkdir()
@@ -346,7 +436,7 @@ def test_validate_cwd_symlink_escape(monkeypatch, tmp_path):
         server_module._validate_cwd(str(symlink_inside))
 
 
-def test_validate_cwd_traversal_attempt(monkeypatch, tmp_path):
+def test_validate_cwd_traversal_attempt(monkeypatch: Any, tmp_path: Any) -> None:
     """Path traversal via ../ should resolve before checking."""
     allowed_dir = tmp_path / "allowed"
     allowed_dir.mkdir()
