@@ -64,7 +64,7 @@ class CodexAdapter:
         cmd = [self.config.cli_command, "exec", "--skip-git-repo-check", "--full-auto"]
         if model:
             cmd.extend(["-m", model])
-        cmd.append(prompt)
+        cmd.extend(["--", prompt])
         return cmd
 
     def check_installed(self) -> tuple[bool, str | None]:
