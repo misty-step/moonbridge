@@ -1,10 +1,12 @@
 import os
 
 from .base import AdapterConfig, CLIAdapter
+from .codex import CodexAdapter
 from .kimi import KimiAdapter
 
 _ADAPTERS: dict[str, CLIAdapter] = {
     "kimi": KimiAdapter(),
+    "codex": CodexAdapter(),
 }
 
 

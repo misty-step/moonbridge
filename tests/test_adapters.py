@@ -1,6 +1,7 @@
 import pytest
 
 from moonbridge.adapters import CLIAdapter, get_adapter, list_adapters
+from moonbridge.adapters.codex import CodexAdapter
 from moonbridge.adapters.kimi import KimiAdapter
 
 
@@ -46,7 +47,7 @@ def test_get_adapter_env_override(monkeypatch):
 
 def test_get_adapter_env_invalid_raises(monkeypatch):
     monkeypatch.setenv("MOONBRIDGE_ADAPTER", "nonexistent")
-    with pytest.raises(ValueError, match="Unknown adapter: nonexistent. Available: kimi"):
+    with pytest.raises(ValueError, match="Unknown adapter: nonexistent. Available:"):
         get_adapter()
 
 
@@ -86,3 +87,62 @@ def test_kimi_adapter_config_values():
     assert adapter.config.supports_thinking is True
     assert "PATH" in adapter.config.safe_env_keys
     assert "Kimi" in adapter.config.tool_description
+
+
+# Codex adapter tests
+
+
+def test_codex_adapter_build_command_basic():
+    adapter = CodexAdapter()
+    cmd = adapter.build_command("hello world", thinking=False)
+    assert cmd == ["codex", "exec", "--full-auto", "hello world"]
+
+
+def test_codex_adapter_build_command_thinking_ignored():
+    """thinking param is passed but ignored (supports_thinking=False)."""
+    adapter = CodexAdapter()
+    cmd = adapter.build_command("test prompt", thinking=True)
+    # Same command - thinking validation happens in server.py
+    assert cmd == ["codex", "exec", "--full-auto", "test prompt"]
+
+
+def test_codex_adapter_check_installed(mocker):
+    mocker.patch("moonbridge.adapters.codex.shutil.which", return_value="/usr/local/bin/codex")
+    adapter = CodexAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is True
+    assert path == "/usr/local/bin/codex"
+
+
+def test_codex_adapter_check_not_installed(mocker):
+    mocker.patch("moonbridge.adapters.codex.shutil.which", return_value=None)
+    adapter = CodexAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is False
+    assert path is None
+
+
+def test_codex_adapter_config_values():
+    adapter = CodexAdapter()
+    assert adapter.config.name == "codex"
+    assert adapter.config.cli_command == "codex"
+    assert adapter.config.supports_thinking is False
+    assert "OPENAI_API_KEY" in adapter.config.safe_env_keys
+    assert "Codex" in adapter.config.tool_description
+
+
+def test_get_adapter_codex(monkeypatch):
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "codex")
+    adapter = get_adapter()
+    assert adapter.config.name == "codex"
+
+
+def test_get_adapter_codex_by_name():
+    adapter = get_adapter("codex")
+    assert isinstance(adapter, CodexAdapter)
+
+
+def test_list_adapters_includes_codex():
+    adapters = list_adapters()
+    assert "codex" in adapters
+    assert "kimi" in adapters
