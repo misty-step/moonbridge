@@ -622,12 +622,26 @@ def test_resolve_model_adapter_env_takes_precedence_over_global(monkeypatch: Any
     assert result == "adapter-model"
 
 
+def test_resolve_model_reads_global_env_dynamically(monkeypatch: Any) -> None:
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.setenv("MOONBRIDGE_MODEL", "global-model-a")
+
+    assert server_module._resolve_model(adapter, None) == "global-model-a"
+
+    monkeypatch.setenv("MOONBRIDGE_MODEL", "global-model-b")
+
+    assert server_module._resolve_model(adapter, None) == "global-model-b"
+
+
 def test_resolve_model_falls_back_to_global(monkeypatch: Any) -> None:
     from moonbridge.adapters.kimi import KimiAdapter
 
     adapter = KimiAdapter()
     monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
-    monkeypatch.setattr(server_module, "GLOBAL_MODEL", "global-model")
+    monkeypatch.setenv("MOONBRIDGE_MODEL", "global-model")
 
     result = server_module._resolve_model(adapter, None)
 
@@ -639,7 +653,7 @@ def test_resolve_model_returns_none_when_no_config(monkeypatch: Any) -> None:
 
     adapter = KimiAdapter()
     monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
-    monkeypatch.setattr(server_module, "GLOBAL_MODEL", None)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
 
     result = server_module._resolve_model(adapter, None)
 
@@ -651,7 +665,7 @@ def test_resolve_model_codex_adapter_env(monkeypatch: Any) -> None:
 
     adapter = CodexAdapter()
     monkeypatch.setenv("MOONBRIDGE_CODEX_MODEL", "gpt-5.2-codex-high")
-    monkeypatch.setattr(server_module, "GLOBAL_MODEL", None)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
 
     result = server_module._resolve_model(adapter, None)
 
@@ -669,6 +683,37 @@ async def test_spawn_agent_with_model_param(mock_popen: Any) -> None:
     args, _kwargs = mock_popen.call_args
     assert "-m" in args[0]
     assert "kimi-k2.5" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_with_codex_adapter_and_model(
+    mock_popen: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "codex")
+
+    result = await server_module.handle_tool(
+        "spawn_agent", {"prompt": "Hello", "model": "gpt-5.2-codex-high"}
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    args, _kwargs = mock_popen.call_args
+    assert "-m" in args[0]
+    assert "gpt-5.2-codex-high" in args[0]
+    assert "--skip-git-repo-check" in args[0]
+
+
+@pytest.mark.asyncio
+async def test_codex_adapter_thinking_rejected(monkeypatch: Any) -> None:
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "codex")
+
+    result = await server_module.handle_tool(
+        "spawn_agent", {"prompt": "Hello", "thinking": True}
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "does not support thinking" in payload["message"]
 
 
 @pytest.mark.asyncio

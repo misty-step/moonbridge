@@ -26,7 +26,15 @@ def test_kimi_adapter_build_command_with_model():
 def test_kimi_adapter_build_command_with_thinking_and_model():
     adapter = KimiAdapter()
     cmd = adapter.build_command("hello world", thinking=True, model="kimi-k2.5")
-    assert cmd == ["kimi", "--print", "--thinking", "-m", "kimi-k2.5", "--prompt", "hello world"]
+    assert cmd == [
+        "kimi",
+        "--print",
+        "--thinking",
+        "-m",
+        "kimi-k2.5",
+        "--prompt",
+        "hello world",
+    ]
 
 
 def test_kimi_adapter_check_installed(mocker):
@@ -107,7 +115,14 @@ def test_kimi_adapter_config_values():
 def test_codex_adapter_build_command_basic():
     adapter = CodexAdapter()
     cmd = adapter.build_command("hello world", thinking=False)
-    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "hello world"]
+    assert cmd == [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--full-auto",
+        "--",
+        "hello world",
+    ]
 
 
 def test_codex_adapter_build_command_thinking_ignored():
@@ -115,13 +130,41 @@ def test_codex_adapter_build_command_thinking_ignored():
     adapter = CodexAdapter()
     cmd = adapter.build_command("test prompt", thinking=True)
     # Same command - thinking validation happens in server.py
-    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "test prompt"]
+    assert cmd == [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--full-auto",
+        "--",
+        "test prompt",
+    ]
 
 
 def test_codex_adapter_build_command_with_model():
     adapter = CodexAdapter()
     cmd = adapter.build_command("hello world", thinking=False, model="gpt-5.2-codex-high")
-    assert cmd == ["codex", "exec", "--skip-git-repo-check", "--full-auto", "-m", "gpt-5.2-codex-high", "hello world"]
+    assert cmd == [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--full-auto",
+        "-m",
+        "gpt-5.2-codex-high",
+        "--",
+        "hello world",
+    ]
+
+
+def test_adapter_prompt_flag_injection_guard():
+    """Verify prompts starting with '-' are handled safely."""
+    prompt = "-n --help"
+    # Codex uses positional arg - needs '--' to prevent flag parsing
+    codex_cmd = CodexAdapter().build_command(prompt, thinking=False)
+    assert codex_cmd[-2:] == ["--", prompt]
+
+    # Kimi uses --prompt flag - prompt is value, inherently protected
+    kimi_cmd = KimiAdapter().build_command(prompt, thinking=False)
+    assert kimi_cmd[-2:] == ["--prompt", prompt]
 
 
 def test_codex_adapter_check_installed(mocker):
