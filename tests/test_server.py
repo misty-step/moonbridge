@@ -36,6 +36,7 @@ async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
 @pytest.mark.asyncio
 async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None:
     starts: list[float] = []
+    ends: list[float] = []
     lock = threading.Lock()
     event = threading.Event()
 
@@ -52,6 +53,8 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
             if len(starts) == 2:
                 event.set()
         event.wait(0.2)
+        with lock:
+            ends.append(time.monotonic())
         return {
             "status": "success",
             "output": prompt,
@@ -71,7 +74,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
     payload = json.loads(result[0].text)
 
     assert len(payload) == 2
-    assert max(starts) - min(starts) < 0.1
+    assert min(ends) >= max(starts)
 
 
 @pytest.mark.asyncio
@@ -91,38 +94,24 @@ async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> N
 
 
 @pytest.mark.asyncio
-async def test_file_not_found_returns_error(mock_popen: Any) -> None:
-    mock_popen.side_effect = FileNotFoundError
+@pytest.mark.parametrize(
+    "exception, expected_stderr_part",
+    [
+        (FileNotFoundError, "CLI not found"),
+        (PermissionError("no execute"), "Permission denied"),
+        (OSError("boom"), "Failed to start process"),
+    ],
+)
+async def test_popen_exceptions_return_error(
+    mock_popen: Any, exception: Exception, expected_stderr_part: str
+) -> None:
+    mock_popen.side_effect = exception
 
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "error"
-    assert "CLI not found" in payload["stderr"]
-    assert payload["returncode"] == -1
-
-
-@pytest.mark.asyncio
-async def test_permission_error_returns_error(mock_popen: Any) -> None:
-    mock_popen.side_effect = PermissionError("no execute")
-
-    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
-
-    assert payload["status"] == "error"
-    assert "Permission denied" in payload["stderr"]
-    assert payload["returncode"] == -1
-
-
-@pytest.mark.asyncio
-async def test_os_error_returns_error(mock_popen: Any) -> None:
-    mock_popen.side_effect = OSError("boom")
-
-    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
-
-    assert payload["status"] == "error"
-    assert "Failed to start process" in payload["stderr"]
+    assert expected_stderr_part in payload["stderr"]
     assert payload["returncode"] == -1
 
 
