@@ -1,12 +1,12 @@
+import gc
 import importlib
 import json
 import logging
 import os
 import threading
 import time
-import gc
 from collections.abc import Iterator
-from subprocess import TimeoutExpired
+from subprocess import Popen, TimeoutExpired
 from typing import Any
 from unittest.mock import MagicMock, call
 
@@ -466,8 +466,20 @@ def test_untrack_process_removes_from_set(reset_active_processes: Any) -> None:
     assert not server_module._active_processes
 
 
+def test_untrack_process_noop_when_not_tracked(reset_active_processes: Any) -> None:
+    """Untracking a never-tracked process is a silent no-op."""
+    proc = MagicMock(spec=Popen)
+
+    server_module._untrack_process(proc)
+
+    assert len(server_module._active_processes) == 0
+
+
 def test_track_process_weakref_allows_gc(reset_active_processes: Any) -> None:
-    proc = MagicMock()
+    class FakeProcess:
+        pid = 1
+
+    proc = FakeProcess()
     server_module._track_process(proc)
 
     del proc
@@ -477,7 +489,7 @@ def test_track_process_weakref_allows_gc(reset_active_processes: Any) -> None:
 
 
 def test_terminate_process_sends_sigterm(mocker: Any) -> None:
-    proc = MagicMock()
+    proc = MagicMock(spec=Popen)
     proc.pid = 123
     mocker.patch.object(proc, "wait", return_value=None)
     killpg = mocker.patch("moonbridge.server.os.killpg")
@@ -489,7 +501,7 @@ def test_terminate_process_sends_sigterm(mocker: Any) -> None:
 
 
 def test_terminate_process_escalates_to_sigkill(mocker: Any) -> None:
-    proc = MagicMock()
+    proc = MagicMock(spec=Popen)
     proc.pid = 456
     mocker.patch.object(
         proc,
@@ -504,11 +516,11 @@ def test_terminate_process_escalates_to_sigkill(mocker: Any) -> None:
         call(proc.pid, server_module.signal.SIGTERM),
         call(proc.pid, server_module.signal.SIGKILL),
     ]
-    assert proc.wait.call_count == 2
+    proc.wait.assert_has_calls([call(timeout=5), call(timeout=5)])
 
 
 def test_terminate_process_handles_already_dead(mocker: Any) -> None:
-    proc = MagicMock()
+    proc = MagicMock(spec=Popen)
     proc.pid = 789
     mocker.patch.object(proc, "wait")
     killpg = mocker.patch(
@@ -525,10 +537,10 @@ def test_terminate_process_handles_already_dead(mocker: Any) -> None:
 def test_cleanup_processes_terminates_running(
     mocker: Any, reset_active_processes: Any
 ) -> None:
-    running = MagicMock()
+    running = MagicMock(spec=Popen)
     running.pid = 111
     running.poll.return_value = None
-    finished = MagicMock()
+    finished = MagicMock(spec=Popen)
     finished.pid = 222
     finished.poll.return_value = 0
     server_module._track_process(running)
@@ -541,7 +553,7 @@ def test_cleanup_processes_terminates_running(
 
 
 def test_cleanup_processes_clears_set(mocker: Any, reset_active_processes: Any) -> None:
-    proc = MagicMock()
+    proc = MagicMock(spec=Popen)
     proc.pid = 333
     proc.poll.return_value = None
     server_module._track_process(proc)
@@ -550,3 +562,26 @@ def test_cleanup_processes_clears_set(mocker: Any, reset_active_processes: Any) 
     server_module._cleanup_processes()
 
     assert not server_module._active_processes
+
+
+def test_cleanup_processes_handles_dead_weakrefs(
+    mocker: Any, reset_active_processes: Any
+) -> None:
+    """Cleanup gracefully handles garbage-collected process refs."""
+
+    class FakeProcess:
+        pid = 555
+
+        def poll(self) -> None:
+            return None
+
+    proc = FakeProcess()
+    server_module._track_process(proc)  # type: ignore[arg-type]
+    del proc
+    gc.collect()
+    terminate = mocker.patch("moonbridge.server._terminate_process")
+
+    server_module._cleanup_processes()
+
+    terminate.assert_not_called()
+    assert len(server_module._active_processes) == 0
