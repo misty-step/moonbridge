@@ -1,6 +1,7 @@
 import importlib
 import json
 import logging
+import os
 import threading
 import time
 from subprocess import TimeoutExpired
@@ -226,3 +227,134 @@ def test_warn_if_unrestricted_no_warning_when_restricted(monkeypatch, capsys, ca
     captured = capsys.readouterr()
     assert captured.err == ""
     assert not caplog.records
+
+
+def test_validate_timeout_default(monkeypatch):
+    monkeypatch.setattr(server_module, "DEFAULT_TIMEOUT", 300)
+    assert server_module._validate_timeout(None) == 300
+
+
+def test_validate_timeout_valid_bounds():
+    for value in (30, 600, 3600):
+        assert server_module._validate_timeout(value) == value
+
+
+def test_validate_timeout_too_low():
+    with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
+        server_module._validate_timeout(29)
+
+
+def test_validate_timeout_too_high():
+    with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
+        server_module._validate_timeout(3601)
+
+
+def test_validate_cwd_no_restrictions(monkeypatch, tmp_path):
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
+    assert server_module._validate_cwd(str(tmp_path)) == os.path.realpath(tmp_path)
+
+
+def test_validate_cwd_with_allowed_dirs(monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    inside = allowed_dir / "inside"
+    inside.mkdir()
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    assert server_module._validate_cwd(str(inside)) == os.path.realpath(inside)
+
+
+def test_validate_cwd_rejects_outside(monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
+        server_module._validate_cwd(str(outside))
+
+
+def test_validate_cwd_subdirectory_allowed(monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "allowed"
+    subdir = allowed_dir / "nested"
+    subdir.mkdir(parents=True)
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    assert server_module._validate_cwd(str(subdir)) == os.path.realpath(subdir)
+
+
+def test_validate_cwd_symlink_resolution(monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "allowed"
+    target_dir = allowed_dir / "target"
+    target_dir.mkdir(parents=True)
+    symlink_path = tmp_path / "symlink"
+    symlink_path.symlink_to(target_dir)
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    assert server_module._validate_cwd(str(symlink_path)) == os.path.realpath(symlink_path)
+
+
+def test_validate_cwd_default_cwd(monkeypatch, tmp_path):
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.setattr(server_module.os, "getcwd", lambda: str(cwd))
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
+
+    assert server_module._validate_cwd(None) == os.path.realpath(cwd)
+
+
+def test_validate_prompt_empty_string():
+    with pytest.raises(ValueError, match="prompt cannot be empty"):
+        server_module._validate_prompt("")
+
+
+def test_validate_prompt_whitespace_only():
+    with pytest.raises(ValueError, match="prompt cannot be empty"):
+        server_module._validate_prompt("   ")
+
+
+def test_validate_prompt_valid():
+    assert server_module._validate_prompt("test prompt") == "test prompt"
+
+
+def test_validate_prompt_max_length():
+    max_len = server_module.MAX_PROMPT_LENGTH
+    prompt = "a" * max_len
+    assert server_module._validate_prompt(prompt) == prompt
+
+
+def test_validate_prompt_exceeds_max():
+    max_len = server_module.MAX_PROMPT_LENGTH
+    with pytest.raises(ValueError, match=f"prompt exceeds {max_len} characters"):
+        server_module._validate_prompt("a" * (max_len + 1))
+
+
+def test_validate_cwd_symlink_escape(monkeypatch, tmp_path):
+    """Symlink inside allowed pointing outside should be rejected."""
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Symlink inside allowed pointing to outside (escape attempt)
+    symlink_inside = allowed_dir / "escape"
+    symlink_inside.symlink_to(outside)
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    # Symlink resolves to outside, should be rejected
+    with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
+        server_module._validate_cwd(str(symlink_inside))
+
+
+def test_validate_cwd_traversal_attempt(monkeypatch, tmp_path):
+    """Path traversal via ../ should resolve before checking."""
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Attacker tries: /tmp/xxx/allowed/../outside
+    traversal = str(allowed_dir / ".." / "outside")
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [str(allowed_dir)])
+
+    with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
+        server_module._validate_cwd(traversal)
