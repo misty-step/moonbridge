@@ -27,6 +27,23 @@ async def test_spawn_agent_calls_kimi_cli(mock_popen: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_agent_per_call_adapter_selection(
+    mock_popen: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "kimi")
+
+    result = await server_module.handle_tool(
+        "spawn_agent", {"prompt": "Hello", "adapter": "codex"}
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    args, _kwargs = mock_popen.call_args
+    assert args[0][0] == "codex"
+    assert "--skip-git-repo-check" in args[0]
+
+
+@pytest.mark.asyncio
 async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello", "thinking": True})
     payload = json.loads(result[0].text)
@@ -79,6 +96,47 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
 
     assert len(payload) == 2
     assert min(ends) >= max(starts)
+
+
+@pytest.mark.asyncio
+async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
+    seen: dict[int, str] = {}
+
+    def fake_run(
+        adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        seen[agent_index] = adapter.config.name
+        return {
+            "status": "success",
+            "output": prompt,
+            "stderr": None,
+            "returncode": 0,
+            "duration_ms": 1,
+            "agent_index": agent_index,
+        }
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+    monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
+
+    result = await server_module.handle_tool(
+        "spawn_agents_parallel",
+        {
+            "agents": [
+                {"prompt": "one", "adapter": "kimi"},
+                {"prompt": "two", "adapter": "codex"},
+            ]
+        },
+    )
+    payload = json.loads(result[0].text)
+
+    assert len(payload) == 2
+    assert seen == {0: "kimi", 1: "codex"}
 
 
 @pytest.mark.asyncio
@@ -195,6 +253,56 @@ async def test_check_status_not_installed(mock_which_no_kimi: Any) -> None:
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
+    def fake_run(
+        adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "output": "ok",
+            "stderr": None,
+            "returncode": 0,
+            "duration_ms": 1,
+            "agent_index": agent_index,
+        }
+
+    for adapter in server_module.ADAPTER_REGISTRY.values():
+        monkeypatch.setattr(adapter, "check_installed", lambda: (True, "/bin/tool"))
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+
+    result = await server_module.handle_tool("list_adapters", {})
+    payload = json.loads(result[0].text)
+
+    by_name = {item["name"]: item for item in payload}
+    assert {"kimi", "codex"} <= set(by_name.keys())
+    assert by_name["kimi"]["installed"] is True
+    assert by_name["kimi"]["authenticated"] is True
+    assert "kimi-k2.5" in by_name["kimi"]["known_models"]
+    assert by_name["codex"]["supports_thinking"] is False
+
+
+@pytest.mark.asyncio
+async def test_tool_schema_includes_adapter_enum() -> None:
+    tools = await server_module.list_tools()
+    spawn_tool = next(tool for tool in tools if tool.name == "spawn_agent")
+    parallel_tool = next(tool for tool in tools if tool.name == "spawn_agents_parallel")
+
+    spawn_enum = spawn_tool.inputSchema["properties"]["adapter"]["enum"]
+    parallel_enum = parallel_tool.inputSchema["properties"]["agents"]["items"]["properties"][
+        "adapter"
+    ]["enum"]
+
+    assert set(spawn_enum) == {"kimi", "codex"}
+    assert set(parallel_enum) == {"kimi", "codex"}
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ class AdapterConfig:
     auth_message: str
     install_hint: str
     supports_thinking: bool
+    known_models: tuple[str, ...] = ()  # Known model options for this adapter
     default_timeout: int = 600
 
 

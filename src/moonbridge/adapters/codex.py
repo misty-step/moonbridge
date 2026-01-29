@@ -47,6 +47,12 @@ class CodexAdapter:
         auth_message="Run: codex login",
         install_hint="See https://github.com/openai/codex",
         supports_thinking=False,
+        known_models=(
+            "gpt-5.2-codex-low",
+            "gpt-5.2-codex-moderate",
+            "gpt-5.2-codex-high",
+            "gpt-5.2-codex-xhigh",
+        ),
     )
 
     def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:

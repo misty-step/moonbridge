@@ -18,7 +18,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from moonbridge.adapters import CLIAdapter, get_adapter
+from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
 
 server = Server("moonbridge")
 
@@ -313,12 +313,34 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
     return {"status": "error", "message": f"{adapter.config.name} CLI error", "details": result}
 
 
+def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
+    installed, _path = adapter.check_installed()
+    authenticated = False
+    if installed:
+        timeout = min(DEFAULT_TIMEOUT, 60)
+        result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
+        authenticated = result["status"] == "success"
+    return {
+        "name": adapter.config.name,
+        "description": adapter.config.tool_description,
+        "supports_thinking": adapter.config.supports_thinking,
+        "known_models": adapter.config.known_models,
+        "installed": installed,
+        "authenticated": authenticated,
+    }
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
     parallel_desc = f"{tool_desc} Run multiple agents in parallel."
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
+    adapter_schema = {
+        "type": "string",
+        "enum": list(ADAPTER_REGISTRY.keys()),
+        "description": "Backend to use (kimi, codex). Defaults to MOONBRIDGE_ADAPTER env or kimi.",
+    }
     return [
         Tool(
             name="spawn_agent",
@@ -330,6 +352,7 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Instructions for the agent (task, context, constraints)",
                     },
+                    "adapter": adapter_schema,
                     "thinking": {
                         "type": "boolean",
                         "description": "Enable extended reasoning mode for complex tasks",
@@ -366,6 +389,7 @@ async def list_tools() -> list[Tool]:
                             "type": "object",
                             "properties": {
                                 "prompt": {"type": "string"},
+                                "adapter": adapter_schema,
                                 "thinking": {"type": "boolean", "default": False},
                                 "timeout_seconds": {
                                     "type": "integer",
@@ -390,6 +414,11 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="list_adapters",
+            description="List available adapters and their status",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
             name="check_status",
             description=status_desc,
             inputSchema={"type": "object", "properties": {}},
@@ -400,9 +429,9 @@ async def list_tools() -> list[Tool]:
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls. Exposed for testing."""
     try:
-        adapter = get_adapter()
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
+            adapter = get_adapter(arguments.get("adapter"))
             prompt = _validate_prompt(arguments["prompt"])
             thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
@@ -440,6 +469,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             loop = asyncio.get_running_loop()
             tasks = []
             for idx, spec in enumerate(agents):
+                adapter = get_adapter(spec.get("adapter"))
                 prompt = _validate_prompt(spec["prompt"])
                 thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 model = _resolve_model(adapter, spec.get("model"))
@@ -474,7 +504,12 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             results.sort(key=lambda item: item["agent_index"])
             return _json_text(results)
 
+        if name == "list_adapters":
+            info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
+            return _json_text(info)
+
         if name == "check_status":
+            adapter = get_adapter()
             return _json_text(_status_check(cwd, adapter))
 
         return _json_text({"status": "error", "message": f"Unknown tool: {name}"})

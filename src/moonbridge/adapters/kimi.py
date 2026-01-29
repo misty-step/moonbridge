@@ -37,6 +37,7 @@ class KimiAdapter:
         auth_message="Run: kimi login",
         install_hint="uv tool install kimi-cli",
         supports_thinking=True,
+        known_models=("kimi-k2.5",),
     )
 
     def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
