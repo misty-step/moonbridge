@@ -4,8 +4,11 @@ import logging
 import os
 import threading
 import time
+import gc
+from collections.abc import Iterator
 from subprocess import TimeoutExpired
 from typing import Any
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -437,3 +440,113 @@ def test_validate_cwd_traversal_attempt(monkeypatch: Any, tmp_path: Any) -> None
 
     with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
         server_module._validate_cwd(traversal)
+
+
+@pytest.fixture
+def reset_active_processes() -> Iterator[None]:
+    server_module._active_processes.clear()
+    yield
+    server_module._active_processes.clear()
+
+
+def test_track_process_adds_to_active_set(reset_active_processes: Any) -> None:
+    proc = MagicMock()
+
+    server_module._track_process(proc)
+
+    assert any(ref() is proc for ref in server_module._active_processes)
+
+
+def test_untrack_process_removes_from_set(reset_active_processes: Any) -> None:
+    proc = MagicMock()
+    server_module._track_process(proc)
+
+    server_module._untrack_process(proc)
+
+    assert not server_module._active_processes
+
+
+def test_track_process_weakref_allows_gc(reset_active_processes: Any) -> None:
+    proc = MagicMock()
+    server_module._track_process(proc)
+
+    del proc
+    gc.collect()
+
+    assert not server_module._active_processes
+
+
+def test_terminate_process_sends_sigterm(mocker: Any) -> None:
+    proc = MagicMock()
+    proc.pid = 123
+    mocker.patch.object(proc, "wait", return_value=None)
+    killpg = mocker.patch("moonbridge.server.os.killpg")
+
+    server_module._terminate_process(proc)
+
+    killpg.assert_called_once_with(proc.pid, server_module.signal.SIGTERM)
+    proc.wait.assert_called_once_with(timeout=5)
+
+
+def test_terminate_process_escalates_to_sigkill(mocker: Any) -> None:
+    proc = MagicMock()
+    proc.pid = 456
+    mocker.patch.object(
+        proc,
+        "wait",
+        side_effect=[TimeoutExpired(cmd="kimi", timeout=5), None],
+    )
+    killpg = mocker.patch("moonbridge.server.os.killpg")
+
+    server_module._terminate_process(proc)
+
+    assert killpg.call_args_list == [
+        call(proc.pid, server_module.signal.SIGTERM),
+        call(proc.pid, server_module.signal.SIGKILL),
+    ]
+    assert proc.wait.call_count == 2
+
+
+def test_terminate_process_handles_already_dead(mocker: Any) -> None:
+    proc = MagicMock()
+    proc.pid = 789
+    mocker.patch.object(proc, "wait")
+    killpg = mocker.patch(
+        "moonbridge.server.os.killpg",
+        side_effect=ProcessLookupError,
+    )
+
+    server_module._terminate_process(proc)
+
+    killpg.assert_called_once_with(proc.pid, server_module.signal.SIGTERM)
+    proc.wait.assert_not_called()
+
+
+def test_cleanup_processes_terminates_running(
+    mocker: Any, reset_active_processes: Any
+) -> None:
+    running = MagicMock()
+    running.pid = 111
+    running.poll.return_value = None
+    finished = MagicMock()
+    finished.pid = 222
+    finished.poll.return_value = 0
+    server_module._track_process(running)
+    server_module._track_process(finished)
+    terminate = mocker.patch("moonbridge.server._terminate_process")
+
+    server_module._cleanup_processes()
+
+    terminate.assert_called_once_with(running)
+
+
+def test_cleanup_processes_clears_set(mocker: Any, reset_active_processes: Any) -> None:
+    proc = MagicMock()
+    proc.pid = 333
+    proc.poll.return_value = None
+    server_module._track_process(proc)
+    mocker.patch("moonbridge.server._terminate_process")
+
+    server_module._cleanup_processes()
+
+    assert not server_module._active_processes
