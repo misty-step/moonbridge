@@ -104,14 +104,34 @@ def _validate_thinking(adapter: CLIAdapter, thinking: bool) -> bool:
     return thinking
 
 
+def _validate_model(model: str | None) -> str | None:
+    """Validate and normalize model string.
+
+    - Strips whitespace
+    - Returns None for empty/whitespace-only strings
+    - Rejects models starting with '-' (flag injection prevention)
+    """
+    if not model:
+        return None
+    model = model.strip()
+    if not model:
+        return None
+    if model.startswith("-"):
+        raise ValueError(f"model cannot start with '-': {model}")
+    return model
+
+
 def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
-    """Resolve model: param > adapter env > global env > None."""
-    if model_param:
-        return model_param
+    """Resolve model: param > adapter env > global env > None.
+
+    All values are validated and normalized.
+    """
+    if validated := _validate_model(model_param):
+        return validated
     adapter_env = f"MOONBRIDGE_{adapter.config.name.upper()}_MODEL"
-    if adapter_model := os.environ.get(adapter_env):
-        return adapter_model
-    return os.environ.get("MOONBRIDGE_MODEL")
+    if validated := _validate_model(os.environ.get(adapter_env)):
+        return validated
+    return _validate_model(os.environ.get("MOONBRIDGE_MODEL"))
 
 
 def _terminate_process(proc: Popen[str]) -> None:

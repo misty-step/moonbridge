@@ -207,3 +207,34 @@ def test_list_adapters_includes_codex():
     adapters = list_adapters()
     assert "codex" in adapters
     assert "kimi" in adapters
+
+
+# Model validation tests (flag injection prevention)
+
+
+def test_kimi_adapter_rejects_model_starting_with_dash():
+    """Model starting with '-' could inject flags - must be rejected."""
+    adapter = KimiAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="--help")
+
+
+def test_kimi_adapter_rejects_model_with_flag_pattern():
+    """Model that looks like a flag must be rejected."""
+    adapter = KimiAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="-m")
+
+
+def test_codex_adapter_rejects_model_starting_with_dash():
+    """Model starting with '-' could inject flags - must be rejected."""
+    adapter = CodexAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="--dangerous")
+
+
+def test_codex_adapter_rejects_model_with_flag_pattern():
+    """Model that looks like a flag must be rejected."""
+    adapter = CodexAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="-c")

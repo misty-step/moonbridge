@@ -54,11 +54,16 @@ class KimiAdapter:
             thinking: Enable extended thinking mode.
             model: Model to use. Optional.
             reasoning_effort: Ignored - Kimi uses thinking mode instead.
+
+        Raises:
+            ValueError: If model starts with '-' (flag injection prevention).
         """
         cmd = [self.config.cli_command, "--print"]
         if thinking:
             cmd.append("--thinking")
         if model:
+            if model.startswith("-"):
+                raise ValueError(f"model cannot start with '-': {model}")
             cmd.extend(["-m", model])
         cmd.extend(["--prompt", prompt])
         return cmd

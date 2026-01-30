@@ -75,9 +75,14 @@ class CodexAdapter:
 
         Returns:
             Command list: ["codex", "exec", "--skip-git-repo-check", "--full-auto", ...]
+
+        Raises:
+            ValueError: If model starts with '-' (flag injection prevention).
         """
         cmd = [self.config.cli_command, "exec", "--skip-git-repo-check", "--full-auto"]
         if model:
+            if model.startswith("-"):
+                raise ValueError(f"model cannot start with '-': {model}")
             cmd.extend(["-m", model])
         if reasoning_effort and reasoning_effort in REASONING_EFFORTS:
             cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])

@@ -90,7 +90,11 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 
 Model resolution order: tool param > adapter env var > global env var > CLI default.
 
+All model values are validated: whitespace is stripped, empty strings become None, and models starting with `-` are rejected (flag injection prevention).
+
 ## Security Notes
+
+**Model validation**: Model parameters are validated to prevent flag injection. Values starting with `-` are rejected at both the server level (`_resolve_model`) and adapter level (`build_command`) as defense-in-depth.
 
 **Codex adapter**: `OPENAI_API_KEY` is passed to spawned Codex processes (required for authentication). This is intentional but means prompts could theoretically exfiltrate the key.
 

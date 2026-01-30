@@ -919,3 +919,69 @@ async def test_codex_build_command_with_reasoning_effort() -> None:
     assert 'model_reasoning_effort="high"' in cmd
     assert "--" in cmd
     assert "test prompt" in cmd
+
+
+# _resolve_model validation tests
+
+
+def test_resolve_model_strips_whitespace(monkeypatch: Any) -> None:
+    """Model with whitespace should be stripped."""
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+
+    result = server_module._resolve_model(adapter, "  gpt-5.2-codex  ")
+
+    assert result == "gpt-5.2-codex"
+
+
+def test_resolve_model_empty_string_returns_none(monkeypatch: Any) -> None:
+    """Empty string model should return None (fall through to default)."""
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+
+    result = server_module._resolve_model(adapter, "")
+
+    assert result is None
+
+
+def test_resolve_model_whitespace_only_returns_none(monkeypatch: Any) -> None:
+    """Whitespace-only model should return None."""
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+
+    result = server_module._resolve_model(adapter, "   ")
+
+    assert result is None
+
+
+def test_resolve_model_env_var_stripped(monkeypatch: Any) -> None:
+    """Environment variable model values should be stripped."""
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.setenv("MOONBRIDGE_KIMI_MODEL", "  model-from-env  ")
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result == "model-from-env"
+
+
+def test_resolve_model_rejects_flag_like_model(monkeypatch: Any) -> None:
+    """Model starting with '-' should be rejected."""
+    from moonbridge.adapters.kimi import KimiAdapter
+
+    adapter = KimiAdapter()
+    monkeypatch.delenv("MOONBRIDGE_KIMI_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+
+    with pytest.raises(ValueError, match="model cannot start with"):
+        server_module._resolve_model(adapter, "--dangerous-flag")
