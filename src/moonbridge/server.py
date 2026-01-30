@@ -187,9 +187,10 @@ def _run_cli_sync(
     timeout_seconds: int,
     agent_index: int,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     start = time.monotonic()
-    cmd = adapter.build_command(prompt, thinking, model)
+    cmd = adapter.build_command(prompt, thinking, model, reasoning_effort)
     logger.debug("Spawning agent with prompt: %s...", prompt[:100])
     try:
         proc = Popen(
@@ -368,8 +369,16 @@ async def list_tools() -> list[Tool]:
                     "model": {
                         "type": "string",
                         "description": (
-                            "Model to use (e.g., 'gpt-5.2-codex-high', 'kimi-k2.5'). "
+                            "Model to use (e.g., 'gpt-5.2-codex', 'kimi-k2.5'). "
                             "Falls back to MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
+                        ),
+                    },
+                    "reasoning_effort": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "xhigh"],
+                        "description": (
+                            "Reasoning effort for Codex (low, medium, high, xhigh). "
+                            "Ignored for Kimi (use thinking instead)."
                         ),
                     },
                 },
@@ -405,6 +414,14 @@ async def list_tools() -> list[Tool]:
                                         "MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
                                     ),
                                 },
+                                "reasoning_effort": {
+                                    "type": "string",
+                                    "enum": ["low", "medium", "high", "xhigh"],
+                                    "description": (
+                                        "Reasoning effort for Codex (low, medium, high, xhigh). "
+                                        "Ignored for Kimi."
+                                    ),
+                                },
                             },
                             "required": ["prompt"],
                         },
@@ -436,6 +453,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
             model = _resolve_model(adapter, arguments.get("model"))
+            reasoning_effort = arguments.get("reasoning_effort")
             loop = asyncio.get_running_loop()
             try:
                 result = await loop.run_in_executor(
@@ -448,6 +466,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     timeout_seconds,
                     0,
                     model,
+                    reasoning_effort,
                 )
             except asyncio.CancelledError:
                 return _json_text(
@@ -473,6 +492,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 prompt = _validate_prompt(spec["prompt"])
                 thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 model = _resolve_model(adapter, spec.get("model"))
+                reasoning_effort = spec.get("reasoning_effort")
                 tasks.append(
                     loop.run_in_executor(
                         None,
@@ -484,6 +504,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                         _validate_timeout(spec.get("timeout_seconds")),
                         idx,
                         model,
+                        reasoning_effort,
                     )
                 )
             try:

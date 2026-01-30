@@ -40,7 +40,21 @@ class KimiAdapter:
         known_models=("kimi-k2.5",),
     )
 
-    def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
+    def build_command(
+        self,
+        prompt: str,
+        thinking: bool,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> list[str]:
+        """Build Kimi CLI command.
+
+        Args:
+            prompt: Task prompt for the agent.
+            thinking: Enable extended thinking mode.
+            model: Model to use. Optional.
+            reasoning_effort: Ignored - Kimi uses thinking mode instead.
+        """
         cmd = [self.config.cli_command, "--print"]
         if thinking:
             cmd.append("--thinking")

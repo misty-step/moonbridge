@@ -53,7 +53,17 @@ src/moonbridge/
 |------|---------|
 | `spawn_agent` | Single agent execution |
 | `spawn_agents_parallel` | Up to 10 agents concurrently |
+| `list_adapters` | List available adapters and their status |
 | `check_status` | Verify CLI installation and auth |
+
+### Tool Parameters
+
+Both `spawn_agent` and `spawn_agents_parallel` support:
+- `adapter`: Backend to use (`kimi`, `codex`)
+- `model`: Model name (e.g., `gpt-5.2-codex`, `kimi-k2.5`)
+- `thinking`: Enable extended reasoning (Kimi only)
+- `reasoning_effort`: Reasoning budget for Codex (`low`, `medium`, `high`, `xhigh`)
+- `timeout_seconds`: Max execution time (30-3600s)
 
 ## Testing
 

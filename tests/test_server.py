@@ -68,6 +68,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
         timeout_seconds: int,
         agent_index: int,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         with lock:
             starts.append(time.monotonic())
@@ -110,6 +111,7 @@ async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
         timeout_seconds: int,
         agent_index: int,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         seen[agent_index] = adapter.config.name
         return {
@@ -229,6 +231,7 @@ async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) ->
         timeout_seconds: int,
         agent_index: int,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         return {
             "status": "success",
@@ -265,6 +268,7 @@ async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
         timeout_seconds: int,
         agent_index: int,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         return {
             "status": "success",
@@ -836,6 +840,7 @@ async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
         timeout_seconds: int,
         agent_index: int,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         calls.append({"prompt": prompt, "model": model, "agent_index": agent_index})
         return {
@@ -862,3 +867,55 @@ async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
 
     assert calls[0]["model"] == "model-a"
     assert calls[1]["model"] == "model-b"
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_with_reasoning_effort(monkeypatch: Any) -> None:
+    """Test that reasoning_effort is passed through to _run_cli_sync."""
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(
+        _adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> dict[str, Any]:
+        calls.append({"prompt": prompt, "reasoning_effort": reasoning_effort})
+        return {
+            "status": "success",
+            "output": prompt,
+            "stderr": None,
+            "returncode": 0,
+            "duration_ms": 1,
+            "agent_index": agent_index,
+        }
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+
+    await server_module.handle_tool(
+        "spawn_agent",
+        {"prompt": "test", "adapter": "codex", "reasoning_effort": "high"},
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_codex_build_command_with_reasoning_effort() -> None:
+    """Test that CodexAdapter builds command with reasoning_effort."""
+    from moonbridge.adapters.codex import CodexAdapter
+
+    adapter = CodexAdapter()
+    cmd = adapter.build_command("test prompt", False, "gpt-5.2-codex", "high")
+
+    assert "-m" in cmd
+    assert "gpt-5.2-codex" in cmd
+    assert "-c" in cmd
+    assert 'model_reasoning_effort="high"' in cmd
+    assert "--" in cmd
+    assert "test prompt" in cmd

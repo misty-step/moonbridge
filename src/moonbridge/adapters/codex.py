@@ -4,6 +4,8 @@ import shutil
 
 from .base import AdapterConfig
 
+REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+
 
 class CodexAdapter:
     """Codex CLI adapter."""
@@ -48,21 +50,28 @@ class CodexAdapter:
         install_hint="See https://github.com/openai/codex",
         supports_thinking=False,
         known_models=(
-            "gpt-5.2-codex-low",
-            "gpt-5.2-codex-moderate",
-            "gpt-5.2-codex-high",
-            "gpt-5.2-codex-xhigh",
+            "gpt-5.2-codex",
+            "gpt-5.1-codex",
+            "gpt-5.1-codex-mini",
+            "gpt-5.1-codex-max",
         ),
     )
 
-    def build_command(self, prompt: str, thinking: bool, model: str | None = None) -> list[str]:
+    def build_command(
+        self,
+        prompt: str,
+        thinking: bool,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> list[str]:
         """Build Codex CLI command.
 
         Args:
             prompt: Task prompt for the agent.
             thinking: Ignored - Codex doesn't support thinking mode.
                       Validation happens in server.py.
-            model: Model to use (e.g., 'gpt-5.2-codex-high'). Optional.
+            model: Model to use (e.g., 'gpt-5.2-codex'). Optional.
+            reasoning_effort: Reasoning effort level (low, medium, high, xhigh). Optional.
 
         Returns:
             Command list: ["codex", "exec", "--skip-git-repo-check", "--full-auto", ...]
@@ -70,6 +79,8 @@ class CodexAdapter:
         cmd = [self.config.cli_command, "exec", "--skip-git-repo-check", "--full-auto"]
         if model:
             cmd.extend(["-m", model])
+        if reasoning_effort and reasoning_effort in REASONING_EFFORTS:
+            cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
         cmd.extend(["--", prompt])
         return cmd
 
