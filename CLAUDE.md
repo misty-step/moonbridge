@@ -37,10 +37,11 @@ src/moonbridge/
 └── adapters/
     ├── base.py        # CLIAdapter protocol and AdapterConfig dataclass
     ├── kimi.py        # Kimi CLI adapter implementation
+    ├── codex.py       # Codex CLI adapter implementation
     └── __init__.py    # Adapter registry and get_adapter()
 ```
 
-**Adapter pattern**: The codebase uses a protocol-based adapter pattern to support multiple CLI backends. `CLIAdapter` defines the interface; each adapter implements `build_command()` and `check_installed()`. Currently only Kimi is implemented, but the pattern exists for future backends (Claude Code CLI, Gemini CLI).
+**Adapter pattern**: The codebase uses a protocol-based adapter pattern to support multiple CLI backends. `CLIAdapter` defines the interface; each adapter implements `build_command()` and `check_installed()`. Currently Kimi and Codex are implemented.
 
 **Process lifecycle**: Agents spawn as subprocess with `start_new_session=True` for clean process group management. Orphan cleanup is registered via `atexit`. Processes are tracked via weak references in `_active_processes`.
 
@@ -52,7 +53,17 @@ src/moonbridge/
 |------|---------|
 | `spawn_agent` | Single agent execution |
 | `spawn_agents_parallel` | Up to 10 agents concurrently |
+| `list_adapters` | List available adapters and their status |
 | `check_status` | Verify CLI installation and auth |
+
+### Tool Parameters
+
+Both `spawn_agent` and `spawn_agents_parallel` support:
+- `adapter`: Backend to use (`kimi`, `codex`)
+- `model`: Model name (e.g., `gpt-5.2-codex`, `kimi-k2.5`)
+- `thinking`: Enable extended reasoning (Kimi only)
+- `reasoning_effort`: Reasoning budget for Codex (`low`, `medium`, `high`, `xhigh`)
+- `timeout_seconds`: Max execution time (30-3600s)
 
 ## Testing
 
@@ -67,12 +78,25 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MOONBRIDGE_ADAPTER` | `kimi` | CLI backend to use |
+| `MOONBRIDGE_ADAPTER` | `kimi` | CLI backend to use (`kimi`, `codex`) |
 | `MOONBRIDGE_TIMEOUT` | `600` | Default timeout (30-3600s) |
 | `MOONBRIDGE_MAX_AGENTS` | `10` | Max parallel agents |
 | `MOONBRIDGE_ALLOWED_DIRS` | (none) | Colon-separated directory allowlist |
 | `MOONBRIDGE_STRICT` | `false` | Exit if ALLOWED_DIRS unset |
 | `MOONBRIDGE_LOG_LEVEL` | `WARNING` | Logging verbosity |
+| `MOONBRIDGE_MODEL` | (none) | Global default model for all adapters |
+| `MOONBRIDGE_KIMI_MODEL` | (none) | Kimi-specific model override |
+| `MOONBRIDGE_CODEX_MODEL` | (none) | Codex-specific model override |
+
+Model resolution order: tool param > adapter env var > global env var > CLI default.
+
+All model values are validated: whitespace is stripped, empty strings become None, and models starting with `-` are rejected (flag injection prevention).
+
+## Security Notes
+
+**Model validation**: Model parameters are validated to prevent flag injection. Values starting with `-` are rejected at both the server level (`_resolve_model`) and adapter level (`build_command`) as defense-in-depth.
+
+**Codex adapter**: `OPENAI_API_KEY` is passed to spawned Codex processes (required for authentication). This is intentional but means prompts could theoretically exfiltrate the key.
 
 ## Release Process
 

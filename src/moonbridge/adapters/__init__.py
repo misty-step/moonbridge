@@ -1,10 +1,12 @@
 import os
 
 from .base import AdapterConfig, CLIAdapter
+from .codex import CodexAdapter
 from .kimi import KimiAdapter
 
-_ADAPTERS: dict[str, CLIAdapter] = {
+ADAPTER_REGISTRY: dict[str, CLIAdapter] = {
     "kimi": KimiAdapter(),
+    "codex": CodexAdapter(),
 }
 
 
@@ -17,15 +19,21 @@ def get_adapter(name: str | None = None) -> CLIAdapter:
     """
     if name is None:
         name = (os.environ.get("MOONBRIDGE_ADAPTER") or "").strip() or "kimi"
-    if name not in _ADAPTERS:
-        available = ", ".join(sorted(_ADAPTERS))
+    if name not in ADAPTER_REGISTRY:
+        available = ", ".join(sorted(ADAPTER_REGISTRY))
         raise ValueError(f"Unknown adapter: {name}. Available: {available}")
-    return _ADAPTERS[name]
+    return ADAPTER_REGISTRY[name]
 
 
 def list_adapters() -> list[str]:
     """List available adapter names."""
-    return list(_ADAPTERS.keys())
+    return list(ADAPTER_REGISTRY.keys())
 
 
-__all__ = ["CLIAdapter", "AdapterConfig", "get_adapter", "list_adapters"]
+__all__ = [
+    "ADAPTER_REGISTRY",
+    "CLIAdapter",
+    "AdapterConfig",
+    "get_adapter",
+    "list_adapters",
+]

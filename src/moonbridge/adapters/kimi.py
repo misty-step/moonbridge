@@ -37,12 +37,34 @@ class KimiAdapter:
         auth_message="Run: kimi login",
         install_hint="uv tool install kimi-cli",
         supports_thinking=True,
+        known_models=("kimi-k2.5",),
     )
 
-    def build_command(self, prompt: str, thinking: bool) -> list[str]:
+    def build_command(
+        self,
+        prompt: str,
+        thinking: bool,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> list[str]:
+        """Build Kimi CLI command.
+
+        Args:
+            prompt: Task prompt for the agent.
+            thinking: Enable extended thinking mode.
+            model: Model to use. Optional.
+            reasoning_effort: Ignored - Kimi uses thinking mode instead.
+
+        Raises:
+            ValueError: If model starts with '-' (flag injection prevention).
+        """
         cmd = [self.config.cli_command, "--print"]
         if thinking:
             cmd.append("--thinking")
+        if model:
+            if model.startswith("-"):
+                raise ValueError(f"model cannot start with '-': {model}")
+            cmd.extend(["-m", model])
         cmd.extend(["--prompt", prompt])
         return cmd
 
