@@ -19,6 +19,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
+from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
 
@@ -359,112 +360,13 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 async def list_tools() -> list[Tool]:
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
-    parallel_desc = f"{tool_desc} Run multiple agents in parallel."
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
-    adapter_schema = {
-        "type": "string",
-        "enum": list(ADAPTER_REGISTRY.keys()),
-        "description": "Backend to use (kimi, codex). Defaults to MOONBRIDGE_ADAPTER env or kimi.",
-    }
-    return [
-        Tool(
-            name="spawn_agent",
-            description=tool_desc,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Instructions for the agent (task, context, constraints)",
-                    },
-                    "adapter": adapter_schema,
-                    "thinking": {
-                        "type": "boolean",
-                        "description": "Enable extended reasoning mode for complex tasks",
-                        "default": False,
-                    },
-                    "timeout_seconds": {
-                        "type": "integer",
-                        "description": "Max execution time (30-3600s)",
-                        "default": DEFAULT_TIMEOUT,
-                        "minimum": 30,
-                        "maximum": 3600,
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": (
-                            "Model to use (e.g., 'gpt-5.2-codex', 'kimi-k2.5'). "
-                            "Falls back to MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
-                        ),
-                    },
-                    "reasoning_effort": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high", "xhigh"],
-                        "description": (
-                            "Reasoning effort for Codex (low, medium, high, xhigh). "
-                            "Ignored for Kimi (use thinking instead)."
-                        ),
-                    },
-                },
-                "required": ["prompt"],
-            },
-        ),
-        Tool(
-            name="spawn_agents_parallel",
-            description=parallel_desc,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "agents": {
-                        "type": "array",
-                        "description": "List of agent specs with prompt and optional settings",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "prompt": {"type": "string"},
-                                "adapter": adapter_schema,
-                                "thinking": {"type": "boolean", "default": False},
-                                "timeout_seconds": {
-                                    "type": "integer",
-                                    "description": "Max execution time (30-3600s)",
-                                    "default": DEFAULT_TIMEOUT,
-                                    "minimum": 30,
-                                    "maximum": 3600,
-                                },
-                                "model": {
-                                    "type": "string",
-                                    "description": (
-                                        "Model to use. Falls back to "
-                                        "MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
-                                    ),
-                                },
-                                "reasoning_effort": {
-                                    "type": "string",
-                                    "enum": ["low", "medium", "high", "xhigh"],
-                                    "description": (
-                                        "Reasoning effort for Codex (low, medium, high, xhigh). "
-                                        "Ignored for Kimi."
-                                    ),
-                                },
-                            },
-                            "required": ["prompt"],
-                        },
-                    },
-                },
-                "required": ["agents"],
-            },
-        ),
-        Tool(
-            name="list_adapters",
-            description="List available adapters and their status",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="check_status",
-            description=status_desc,
-            inputSchema={"type": "object", "properties": {}},
-        ),
-    ]
+    return build_tools(
+        adapter_names=tuple(ADAPTER_REGISTRY.keys()),
+        default_timeout=DEFAULT_TIMEOUT,
+        tool_description=tool_desc,
+        status_description=status_desc,
+    )
 
 
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
