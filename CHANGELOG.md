@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.5.0...moonbridge-v0.5.1) (2026-02-01)
+
+
+### Bug Fixes
+
+* **ci:** trigger publish.yml instead of duplicating PyPI publish ([#56](https://github.com/misty-step/moonbridge/issues/56)) ([fb4aa6b](https://github.com/misty-step/moonbridge/commit/fb4aa6b6a8ece7047dcc105179780c0750da1160))
+
 ## [0.5.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.4.1...moonbridge-v0.5.0) (2026-01-31)
 
 
