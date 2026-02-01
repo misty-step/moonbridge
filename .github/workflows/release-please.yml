@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
@@ -27,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger publish workflow
-        run: gh workflow run publish.yml --ref "${{ needs.release-please.outputs.tag_name }}"
+        run: gh workflow run publish.yml --ref "${{ needs.release-please.outputs.tag_name }}" -f ref="${{ needs.release-please.outputs.tag_name }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
