@@ -654,6 +654,32 @@ def test_terminate_process_handles_already_dead(mocker: Any) -> None:
     proc.wait.assert_not_called()
 
 
+def test_terminate_process_handles_death_between_sigterm_and_sigkill(mocker: Any) -> None:
+    """Process dies after SIGTERM but before SIGKILL (race condition)."""
+    proc = MagicMock(spec=Popen)
+    proc.pid = 101112
+    mocker.patch.object(
+        proc,
+        "wait",
+        side_effect=[TimeoutExpired(cmd="kimi", timeout=5), None],
+    )
+    killpg = mocker.patch(
+        "moonbridge.server.os.killpg",
+        side_effect=[None, ProcessLookupError],  # SIGTERM succeeds, SIGKILL fails
+    )
+
+    server_module._terminate_process(proc)
+
+    assert killpg.call_args_list == [
+        call(proc.pid, server_module.signal.SIGTERM),
+        call(proc.pid, server_module.signal.SIGKILL),
+    ]
+    # wait is called only once (after SIGTERM), not after SIGKILL since process is gone
+    proc.wait.assert_called_once_with(timeout=5)
+    # poll() is called to reap the process that died between signals
+    proc.poll.assert_called_once()
+
+
 def test_cleanup_processes_terminates_running(
     mocker: Any, reset_active_processes: Any
 ) -> None:
