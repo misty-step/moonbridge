@@ -142,7 +142,10 @@ def _terminate_process(proc: Popen[str]) -> None:
     try:
         proc.wait(timeout=5)
     except TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return  # Process died between SIGTERM and SIGKILL
         proc.wait(timeout=5)
 
 
