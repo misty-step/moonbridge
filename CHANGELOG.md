@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.5.1...moonbridge-v0.5.2) (2026-02-01)
+
+
+### Bug Fixes
+
+* handle ProcessLookupError on SIGKILL path in _terminate_process ([#58](https://github.com/misty-step/moonbridge/issues/58)) ([b52d745](https://github.com/misty-step/moonbridge/commit/b52d7452bdc1777d63c42a2ce70d6e290f9b0c54))
+
 ## [0.5.1](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.5.0...moonbridge-v0.5.1) (2026-02-01)
 
 
