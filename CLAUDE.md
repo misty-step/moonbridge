@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Moonbridge
 
-An MCP server that spawns Kimi K2.5 agents from any MCP client. Enables parallel agent execution—run 10 approaches simultaneously for the cost of one Claude request.
+An MCP server that spawns AI coding agents from any MCP client. Supports multiple backends (Kimi, Codex) with parallel execution—run 10 approaches simultaneously for a fraction of the cost.
 
 ## Commands
 
