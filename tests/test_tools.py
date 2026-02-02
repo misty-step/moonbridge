@@ -226,3 +226,49 @@ class TestDynamicParameterInjection:
         )
         check_status = tools[3]
         assert check_status.description == "Custom status description"
+
+
+class TestTimeoutValidation:
+    """Tests for timeout bounds validation."""
+
+    def test_timeout_below_minimum_raises(self):
+        """default_timeout below minimum raises ValueError."""
+        with pytest.raises(ValueError, match="must be >= 30"):
+            build_tools(
+                adapter_names=("kimi",),
+                default_timeout=10,  # Below minimum of 30
+                tool_description="Test",
+                status_description="Status",
+            )
+
+    def test_timeout_above_maximum_raises(self):
+        """default_timeout above maximum raises ValueError."""
+        with pytest.raises(ValueError, match="must be <= 3600"):
+            build_tools(
+                adapter_names=("kimi",),
+                default_timeout=5000,  # Above maximum of 3600
+                tool_description="Test",
+                status_description="Status",
+            )
+
+    def test_timeout_at_minimum_accepted(self):
+        """default_timeout at minimum boundary is accepted."""
+        tools = build_tools(
+            adapter_names=("kimi",),
+            default_timeout=30,  # Exactly at minimum
+            tool_description="Test",
+            status_description="Status",
+        )
+        props = tools[0].inputSchema["properties"]
+        assert props["timeout_seconds"]["default"] == 30
+
+    def test_timeout_at_maximum_accepted(self):
+        """default_timeout at maximum boundary is accepted."""
+        tools = build_tools(
+            adapter_names=("kimi",),
+            default_timeout=3600,  # Exactly at maximum
+            tool_description="Test",
+            status_description="Status",
+        )
+        props = tools[0].inputSchema["properties"]
+        assert props["timeout_seconds"]["default"] == 3600

@@ -118,13 +118,23 @@ def _build_adapter_param(adapter_names: tuple[str, ...]) -> ParameterDef:
 
 
 def _build_timeout_param(default_timeout: int) -> ParameterDef:
-    """Create timeout parameter with dynamic default."""
+    """Create timeout parameter with dynamic default.
+
+    Raises:
+        ValueError: If default_timeout is outside the valid range.
+    """
+    min_timeout = TIMEOUT_PARAM_BASE.minimum
+    max_timeout = TIMEOUT_PARAM_BASE.maximum
+    if min_timeout is not None and default_timeout < min_timeout:
+        raise ValueError(f"default_timeout must be >= {min_timeout}, got {default_timeout}")
+    if max_timeout is not None and default_timeout > max_timeout:
+        raise ValueError(f"default_timeout must be <= {max_timeout}, got {default_timeout}")
     return ParameterDef(
         type="integer",
         description=TIMEOUT_PARAM_BASE.description,
         default=default_timeout,
-        minimum=TIMEOUT_PARAM_BASE.minimum,
-        maximum=TIMEOUT_PARAM_BASE.maximum,
+        minimum=min_timeout,
+        maximum=max_timeout,
     )
 
 
