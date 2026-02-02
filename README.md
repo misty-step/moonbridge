@@ -148,17 +148,31 @@ kimi login
 
 ### Timeout errors
 
-Increase the timeout for long-running tasks:
+Adapters have sensible defaults: Codex=1800s (30min), Kimi=600s (10min).
+
+For exceptionally long tasks, override explicitly:
 
 ```json
-{"prompt": "...", "timeout_seconds": 1800}
+{"prompt": "...", "timeout_seconds": 3600}
 ```
 
-Or set a global default:
+Or set per-adapter defaults via environment:
 
 ```bash
-export MOONBRIDGE_TIMEOUT=1800
+export MOONBRIDGE_CODEX_TIMEOUT=2400  # 40 minutes
+export MOONBRIDGE_KIMI_TIMEOUT=900    # 15 minutes
 ```
+
+## Timeout Best Practices
+
+| Task Type | Recommended |
+|-----------|-------------|
+| Quick query, status | 60-180s |
+| Simple edits | 300-600s |
+| Feature implementation | 1200-1800s |
+| Large refactor | 1800-3600s |
+
+Priority resolution: explicit param > adapter env > adapter default > global env > 600s fallback
 
 ### "MOONBRIDGE_ALLOWED_DIRS is not set" warning
 

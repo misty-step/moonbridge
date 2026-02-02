@@ -38,6 +38,7 @@ class KimiAdapter:
         install_hint="uv tool install kimi-cli",
         supports_thinking=True,
         known_models=("kimi-k2.5",),
+        default_timeout=600,  # 10 minutes - Kimi is faster
     )
 
     def build_command(

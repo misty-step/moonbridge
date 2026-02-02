@@ -79,7 +79,9 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MOONBRIDGE_ADAPTER` | `kimi` | CLI backend to use (`kimi`, `codex`) |
-| `MOONBRIDGE_TIMEOUT` | `600` | Default timeout (30-3600s) |
+| `MOONBRIDGE_TIMEOUT` | `600` | Global timeout fallback (30-3600s) |
+| `MOONBRIDGE_CODEX_TIMEOUT` | `1800` | Codex-specific timeout (30min default) |
+| `MOONBRIDGE_KIMI_TIMEOUT` | `600` | Kimi-specific timeout (10min default) |
 | `MOONBRIDGE_MAX_AGENTS` | `10` | Max parallel agents |
 | `MOONBRIDGE_ALLOWED_DIRS` | (none) | Colon-separated directory allowlist |
 | `MOONBRIDGE_STRICT` | `false` | Exit if ALLOWED_DIRS unset |
@@ -87,6 +89,8 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 | `MOONBRIDGE_MODEL` | (none) | Global default model for all adapters |
 | `MOONBRIDGE_KIMI_MODEL` | (none) | Kimi-specific model override |
 | `MOONBRIDGE_CODEX_MODEL` | (none) | Codex-specific model override |
+
+Timeout resolution order: tool param > adapter env var > adapter default > global env var > 600s.
 
 Model resolution order: tool param > adapter env var > global env var > CLI default.
 

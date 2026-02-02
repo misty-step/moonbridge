@@ -19,6 +19,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
+from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
 
@@ -71,8 +72,20 @@ def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
     return env
 
 
-def _validate_timeout(timeout_seconds: int | None) -> int:
-    value = DEFAULT_TIMEOUT if timeout_seconds is None else int(timeout_seconds)
+def _resolve_timeout(adapter: CLIAdapter, timeout_seconds: int | None) -> int:
+    """Resolve timeout: explicit > adapter-env > adapter-default > global."""
+    if timeout_seconds is not None:
+        value = int(timeout_seconds)
+    else:
+        # Check adapter-specific env var first
+        env_key = f"MOONBRIDGE_{adapter.config.name.upper()}_TIMEOUT"
+        if env_val := os.environ.get(env_key):
+            value = int(env_val)
+        elif adapter.config.default_timeout != 600:
+            # Use adapter default if explicitly set (not the base default)
+            value = adapter.config.default_timeout
+        else:
+            value = DEFAULT_TIMEOUT
     if value < 30 or value > 3600:
         raise ValueError("timeout_seconds must be between 30 and 3600")
     return value
@@ -359,112 +372,13 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 async def list_tools() -> list[Tool]:
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
-    parallel_desc = f"{tool_desc} Run multiple agents in parallel."
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
-    adapter_schema = {
-        "type": "string",
-        "enum": list(ADAPTER_REGISTRY.keys()),
-        "description": "Backend to use (kimi, codex). Defaults to MOONBRIDGE_ADAPTER env or kimi.",
-    }
-    return [
-        Tool(
-            name="spawn_agent",
-            description=tool_desc,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Instructions for the agent (task, context, constraints)",
-                    },
-                    "adapter": adapter_schema,
-                    "thinking": {
-                        "type": "boolean",
-                        "description": "Enable extended reasoning mode for complex tasks",
-                        "default": False,
-                    },
-                    "timeout_seconds": {
-                        "type": "integer",
-                        "description": "Max execution time (30-3600s)",
-                        "default": DEFAULT_TIMEOUT,
-                        "minimum": 30,
-                        "maximum": 3600,
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": (
-                            "Model to use (e.g., 'gpt-5.2-codex', 'kimi-k2.5'). "
-                            "Falls back to MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
-                        ),
-                    },
-                    "reasoning_effort": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high", "xhigh"],
-                        "description": (
-                            "Reasoning effort for Codex (low, medium, high, xhigh). "
-                            "Ignored for Kimi (use thinking instead)."
-                        ),
-                    },
-                },
-                "required": ["prompt"],
-            },
-        ),
-        Tool(
-            name="spawn_agents_parallel",
-            description=parallel_desc,
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "agents": {
-                        "type": "array",
-                        "description": "List of agent specs with prompt and optional settings",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "prompt": {"type": "string"},
-                                "adapter": adapter_schema,
-                                "thinking": {"type": "boolean", "default": False},
-                                "timeout_seconds": {
-                                    "type": "integer",
-                                    "description": "Max execution time (30-3600s)",
-                                    "default": DEFAULT_TIMEOUT,
-                                    "minimum": 30,
-                                    "maximum": 3600,
-                                },
-                                "model": {
-                                    "type": "string",
-                                    "description": (
-                                        "Model to use. Falls back to "
-                                        "MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
-                                    ),
-                                },
-                                "reasoning_effort": {
-                                    "type": "string",
-                                    "enum": ["low", "medium", "high", "xhigh"],
-                                    "description": (
-                                        "Reasoning effort for Codex (low, medium, high, xhigh). "
-                                        "Ignored for Kimi."
-                                    ),
-                                },
-                            },
-                            "required": ["prompt"],
-                        },
-                    },
-                },
-                "required": ["agents"],
-            },
-        ),
-        Tool(
-            name="list_adapters",
-            description="List available adapters and their status",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="check_status",
-            description=status_desc,
-            inputSchema={"type": "object", "properties": {}},
-        ),
-    ]
+    return build_tools(
+        adapter_names=tuple(ADAPTER_REGISTRY.keys()),
+        default_timeout=DEFAULT_TIMEOUT,
+        tool_description=tool_desc,
+        status_description=status_desc,
+    )
 
 
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
@@ -475,7 +389,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             adapter = get_adapter(arguments.get("adapter"))
             prompt = _validate_prompt(arguments["prompt"])
             thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
-            timeout_seconds = _validate_timeout(arguments.get("timeout_seconds"))
+            timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
             model = _resolve_model(adapter, arguments.get("model"))
             reasoning_effort = arguments.get("reasoning_effort")
             loop = asyncio.get_running_loop()
@@ -525,7 +439,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                         prompt,
                         thinking,
                         cwd,
-                        _validate_timeout(spec.get("timeout_seconds")),
+                        _resolve_timeout(adapter, spec.get("timeout_seconds")),
                         idx,
                         model,
                         reasoning_effort,
