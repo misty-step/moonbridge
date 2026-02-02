@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
+from moonbridge.adapters.base import AgentResult
 server_module = importlib.import_module("moonbridge.server")
 
 
@@ -69,7 +70,7 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> AgentResult:
         with lock:
             starts.append(time.monotonic())
             if len(starts) == 2:
@@ -77,14 +78,14 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
         event.wait(0.2)
         with lock:
             ends.append(time.monotonic())
-        return {
-            "status": "success",
-            "output": prompt,
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": agent_index,
-        }
+        return AgentResult(
+            status="success",
+            output=prompt,
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
 
     monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
     monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
@@ -112,16 +113,16 @@ async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> AgentResult:
         seen[agent_index] = adapter.config.name
-        return {
-            "status": "success",
-            "output": prompt,
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": agent_index,
-        }
+        return AgentResult(
+            status="success",
+            output=prompt,
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
 
     monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
     monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
@@ -232,15 +233,15 @@ async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) ->
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "status": "success",
-            "output": "ok",
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": 0,
-        }
+    ) -> AgentResult:
+        return AgentResult(
+            status="success",
+            output="ok",
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=0,
+        )
 
     monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
 
@@ -269,15 +270,15 @@ async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "status": "success",
-            "output": "ok",
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": agent_index,
-        }
+    ) -> AgentResult:
+        return AgentResult(
+            status="success",
+            output="ok",
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
 
     for adapter in server_module.ADAPTER_REGISTRY.values():
         monkeypatch.setattr(adapter, "check_installed", lambda: (True, "/bin/tool"))
@@ -902,16 +903,16 @@ async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> AgentResult:
         calls.append({"prompt": prompt, "model": model, "agent_index": agent_index})
-        return {
-            "status": "success",
-            "output": prompt,
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": agent_index,
-        }
+        return AgentResult(
+            status="success",
+            output=prompt,
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
 
     monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
     monkeypatch.setattr(server_module, "MAX_PARALLEL_AGENTS", 10)
@@ -944,16 +945,16 @@ async def test_spawn_agent_with_reasoning_effort(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> AgentResult:
         calls.append({"prompt": prompt, "reasoning_effort": reasoning_effort})
-        return {
-            "status": "success",
-            "output": prompt,
-            "stderr": None,
-            "returncode": 0,
-            "duration_ms": 1,
-            "agent_index": agent_index,
-        }
+        return AgentResult(
+            status="success",
+            output=prompt,
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
 
     monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
 

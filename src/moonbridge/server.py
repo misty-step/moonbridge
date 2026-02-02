@@ -19,6 +19,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
+from moonbridge.adapters.base import AgentResult
 from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
@@ -193,29 +194,6 @@ def _auth_error(stderr: str | None, adapter: CLIAdapter) -> bool:
     return any(pattern in lowered for pattern in adapter.config.auth_patterns)
 
 
-def _result(
-    *,
-    status: str,
-    output: str,
-    stderr: str | None,
-    returncode: int,
-    duration_ms: int,
-    agent_index: int,
-    message: str | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "status": status,
-        "output": output,
-        "stderr": stderr,
-        "returncode": returncode,
-        "duration_ms": duration_ms,
-        "agent_index": agent_index,
-    }
-    if message is not None:
-        payload["message"] = message
-    return payload
-
-
 def _run_cli_sync(
     adapter: CLIAdapter,
     prompt: str,
@@ -225,7 +203,7 @@ def _run_cli_sync(
     agent_index: int,
     model: str | None = None,
     reasoning_effort: str | None = None,
-) -> dict[str, Any]:
+) -> AgentResult:
     start = time.monotonic()
     cmd = adapter.build_command(prompt, thinking, model, reasoning_effort)
     logger.debug("Spawning agent with prompt: %s...", prompt[:100])
@@ -242,7 +220,7 @@ def _run_cli_sync(
     except FileNotFoundError:
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.error("%s CLI not found or not executable", adapter.config.name)
-        return _result(
+        return AgentResult(
             status="error",
             output="",
             stderr=f"{adapter.config.name} CLI not found or not executable",
@@ -253,7 +231,7 @@ def _run_cli_sync(
     except PermissionError as exc:
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.error("Permission denied starting process: %s", exc)
-        return _result(
+        return AgentResult(
             status="error",
             output="",
             stderr=f"Permission denied: {exc}",
@@ -264,7 +242,7 @@ def _run_cli_sync(
     except OSError as exc:
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.error("Failed to start process: %s", exc)
-        return _result(
+        return AgentResult(
             status="error",
             output="",
             stderr=f"Failed to start process: {exc}",
@@ -279,7 +257,7 @@ def _run_cli_sync(
         stderr_value = stderr or None
         if _auth_error(stderr_value, adapter):
             logger.info("Agent %s completed with status: auth_error", agent_index)
-            return _result(
+            return AgentResult(
                 status="auth_error",
                 output=stdout,
                 stderr=stderr_value,
@@ -290,7 +268,7 @@ def _run_cli_sync(
             )
         status = "success" if proc.returncode == 0 else "error"
         logger.info("Agent %s completed with status: %s", agent_index, status)
-        return _result(
+        return AgentResult(
             status=status,
             output=stdout,
             stderr=stderr_value,
@@ -302,7 +280,7 @@ def _run_cli_sync(
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.warning("Agent %s timed out after %s seconds", agent_index, timeout_seconds)
-        return _result(
+        return AgentResult(
             status="timeout",
             output="",
             stderr=None,
@@ -314,7 +292,7 @@ def _run_cli_sync(
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.error("Agent %s failed with error: %s", agent_index, exc)
-        return _result(
+        return AgentResult(
             status="error",
             output="",
             stderr=str(exc),
@@ -341,14 +319,18 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
         }
     timeout = min(DEFAULT_TIMEOUT, 60)
     result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
-    if result["status"] == "auth_error":
+    if result.status == "auth_error":
         return {"status": "auth_error", "message": adapter.config.auth_message}
-    if result["status"] == "success":
+    if result.status == "success":
         return {
             "status": "success",
             "message": f"{adapter.config.name} CLI available and authenticated",
         }
-    return {"status": "error", "message": f"{adapter.config.name} CLI error", "details": result}
+    return {
+        "status": "error",
+        "message": f"{adapter.config.name} CLI error",
+        "details": result.to_dict(),
+    }
 
 
 def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
@@ -357,7 +339,7 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
     if installed:
         timeout = min(DEFAULT_TIMEOUT, 60)
         result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
-        authenticated = result["status"] == "success"
+        authenticated = result.status == "success"
     return {
         "name": adapter.config.name,
         "description": adapter.config.tool_description,
@@ -408,16 +390,16 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 )
             except asyncio.CancelledError:
                 return _json_text(
-                    _result(
+                    AgentResult(
                         status="cancelled",
                         output="",
                         stderr=None,
                         returncode=-1,
                         duration_ms=0,
                         agent_index=0,
-                    )
+                    ).to_dict()
                 )
-            return _json_text(result)
+            return _json_text(result.to_dict())
 
         if name == "spawn_agents_parallel":
             agents = list(arguments["agents"])
@@ -449,7 +431,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 results = await asyncio.gather(*tasks)
             except asyncio.CancelledError:
                 cancelled = [
-                    _result(
+                    AgentResult(
                         status="cancelled",
                         output="",
                         stderr=None,
@@ -459,9 +441,9 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     )
                     for idx in range(len(agents))
                 ]
-                return _json_text(cancelled)
-            results.sort(key=lambda item: item["agent_index"])
-            return _json_text(results)
+                return _json_text([item.to_dict() for item in cancelled])
+            results.sort(key=lambda item: item.agent_index)
+            return _json_text([item.to_dict() for item in results])
 
         if name == "list_adapters":
             info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
