@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, call
 import pytest
 
 from moonbridge.adapters.base import AgentResult
+
 server_module = importlib.import_module("moonbridge.server")
 
 
