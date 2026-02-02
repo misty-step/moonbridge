@@ -55,7 +55,7 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 | Task | Why Moonbridge |
 |------|----------------|
 | Parallel exploration | Run 10 approaches simultaneously, pick the best |
-| Frontend/UI work | Kimi excels at visual coding; Codex at refactoring |
+| Frontend/UI work | Kimi excels at visual coding and component design |
 | Tests and documentation | Cost-effective for high-volume tasks |
 | Refactoring | Try multiple strategies in one request |
 
