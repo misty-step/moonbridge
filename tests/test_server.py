@@ -431,24 +431,59 @@ def test_warn_if_unrestricted_no_warning_when_restricted(
     assert not caplog.records
 
 
-def test_validate_timeout_default(monkeypatch: Any) -> None:
-    monkeypatch.setattr(server_module, "DEFAULT_TIMEOUT", 300)
-    assert server_module._validate_timeout(None) == 300
+def test_resolve_timeout_uses_adapter_default(monkeypatch: Any) -> None:
+    """Adapter-specific default takes precedence over global default."""
+    from moonbridge.adapters import get_adapter
+
+    codex = get_adapter("codex")
+    assert server_module._resolve_timeout(codex, None) == 1800  # Codex default
+
+    kimi = get_adapter("kimi")
+    # Kimi default equals global default, so falls back to DEFAULT_TIMEOUT
+    monkeypatch.setattr(server_module, "DEFAULT_TIMEOUT", 600)
+    assert server_module._resolve_timeout(kimi, None) == 600
 
 
-def test_validate_timeout_valid_bounds() -> None:
+def test_resolve_timeout_env_override(monkeypatch: Any) -> None:
+    """Adapter-specific env var takes precedence over adapter default."""
+    from moonbridge.adapters import get_adapter
+
+    codex = get_adapter("codex")
+    monkeypatch.setenv("MOONBRIDGE_CODEX_TIMEOUT", "2400")
+    assert server_module._resolve_timeout(codex, None) == 2400
+
+
+def test_resolve_timeout_explicit_param(monkeypatch: Any) -> None:
+    """Explicit param takes precedence over everything."""
+    from moonbridge.adapters import get_adapter
+
+    codex = get_adapter("codex")
+    monkeypatch.setenv("MOONBRIDGE_CODEX_TIMEOUT", "2400")
+    assert server_module._resolve_timeout(codex, 300) == 300
+
+
+def test_resolve_timeout_valid_bounds() -> None:
+    from moonbridge.adapters import get_adapter
+
+    kimi = get_adapter("kimi")
     for value in (30, 600, 3600):
-        assert server_module._validate_timeout(value) == value
+        assert server_module._resolve_timeout(kimi, value) == value
 
 
-def test_validate_timeout_too_low() -> None:
+def test_resolve_timeout_too_low() -> None:
+    from moonbridge.adapters import get_adapter
+
+    kimi = get_adapter("kimi")
     with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
-        server_module._validate_timeout(29)
+        server_module._resolve_timeout(kimi, 29)
 
 
-def test_validate_timeout_too_high() -> None:
+def test_resolve_timeout_too_high() -> None:
+    from moonbridge.adapters import get_adapter
+
+    kimi = get_adapter("kimi")
     with pytest.raises(ValueError, match="timeout_seconds must be between 30 and 3600"):
-        server_module._validate_timeout(3601)
+        server_module._resolve_timeout(kimi, 3601)
 
 
 def test_validate_cwd_no_restrictions(monkeypatch: Any, tmp_path: Any) -> None:

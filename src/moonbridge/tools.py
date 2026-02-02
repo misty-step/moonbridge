@@ -60,7 +60,11 @@ THINKING_PARAM = ParameterDef(
 # Note: TIMEOUT_PARAM default is populated dynamically
 TIMEOUT_PARAM_BASE = ParameterDef(
     type="integer",
-    description="Max execution time (30-3600s)",
+    description=(
+        "Max execution time (30-3600s). "
+        "Defaults: Codex=1800s (30min), Kimi=600s (10min). "
+        "Complex implementations may need full 30min+."
+    ),
     minimum=30,
     maximum=3600,
     # default is set dynamically

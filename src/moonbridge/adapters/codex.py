@@ -55,6 +55,7 @@ class CodexAdapter:
             "gpt-5.1-codex-mini",
             "gpt-5.1-codex-max",
         ),
+        default_timeout=1800,  # 30 minutes - Codex runs long
     )
 
     def build_command(
