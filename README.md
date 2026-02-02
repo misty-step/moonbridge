@@ -2,7 +2,7 @@
 
 **Your MCP client just got a team.**
 
-Spawn Kimi K2.5 agents from Claude Code, Cursor, or any MCP client. Run 10 approaches in parallel for the cost of one Claude request.
+Spawn AI coding agents from Claude Code, Cursor, or any MCP client. Run 10 approaches in parallel for a fraction of the cost.
 
 ```bash
 uvx moonbridge
@@ -10,10 +10,12 @@ uvx moonbridge
 
 ## Quick Start
 
-1. **Install Kimi CLI and authenticate:**
-   ```bash
-   uv tool install --python 3.13 kimi-cli && kimi login
-   ```
+1. **Install at least one supported CLI:**
+
+   | Adapter | Install | Authenticate |
+   |---------|---------|--------------|
+   | Kimi (default) | `uv tool install --python 3.13 kimi-cli` | `kimi login` |
+   | Codex | `npm install -g @openai/codex` | Set `OPENAI_API_KEY` |
 
 2. **Add to MCP config** (`~/.mcp.json`):
    ```json
@@ -53,7 +55,7 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 | Task | Why Moonbridge |
 |------|----------------|
 | Parallel exploration | Run 10 approaches simultaneously, pick the best |
-| Frontend/UI work | Kimi excels at visual coding and component design |
+| Frontend/UI work | Kimi excels at visual coding; Codex at refactoring |
 | Tests and documentation | Cost-effective for high-volume tasks |
 | Refactoring | Try multiple strategies in one request |
 
@@ -65,7 +67,8 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 |------|----------|
 | `spawn_agent` | Single task: "Write tests for auth.ts" |
 | `spawn_agents_parallel` | Go wide: 10 agents, 10 approaches, pick the best |
-| `check_status` | Verify Kimi CLI is installed and authenticated |
+| `check_status` | Verify the configured CLI is installed and authenticated |
+| `list_adapters` | Show available adapters and their status |
 
 ### Example: Parallel Exploration
 
@@ -88,7 +91,10 @@ Three approaches. One request. You choose the winner.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `prompt` | string | Yes | Task description for the agent |
-| `thinking` | boolean | No | Enable reasoning mode (default: false) |
+| `adapter` | string | No | Backend to use: `kimi`, `codex` (default: `kimi`) |
+| `model` | string | No | Model override (e.g., `gpt-5.2-codex`) |
+| `thinking` | boolean | No | Enable reasoning mode (Kimi only) |
+| `reasoning_effort` | string | No | Reasoning budget: `low`, `medium`, `high`, `xhigh` (Codex only) |
 | `timeout_seconds` | integer | No | Override default timeout (30-3600) |
 
 **`spawn_agents_parallel`**
@@ -97,7 +103,10 @@ Three approaches. One request. You choose the winner.
 |-----------|------|----------|-------------|
 | `agents` | array | Yes | List of agent configs (max 10) |
 | `agents[].prompt` | string | Yes | Task for this agent |
-| `agents[].thinking` | boolean | No | Enable reasoning for this agent |
+| `agents[].adapter` | string | No | Backend for this agent |
+| `agents[].model` | string | No | Model override for this agent |
+| `agents[].thinking` | boolean | No | Enable reasoning (Kimi only) |
+| `agents[].reasoning_effort` | string | No | Reasoning budget (Codex only) |
 | `agents[].timeout_seconds` | integer | No | Timeout for this agent |
 
 ## Response Format
@@ -107,7 +116,7 @@ All tools return JSON with these fields:
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | `success`, `error`, `timeout`, `auth_error`, or `cancelled` |
-| `output` | string | stdout from Kimi agent |
+| `output` | string | stdout from the agent |
 | `stderr` | string\|null | stderr if any |
 | `returncode` | int | Process exit code (-1 for timeout/error) |
 | `duration_ms` | int | Execution time in milliseconds |
@@ -129,21 +138,30 @@ All tools return JSON with these fields:
 
 ## Troubleshooting
 
-### "Kimi CLI not found"
+### "CLI not found"
 
-Install the Kimi CLI:
+Install the CLI for your chosen adapter:
 
 ```bash
+# Kimi
 uv tool install --python 3.13 kimi-cli
 which kimi
+
+# Codex
+npm install -g @openai/codex
+which codex
 ```
 
 ### "auth_error" responses
 
-Authenticate with Kimi:
+Authenticate with your chosen CLI:
 
 ```bash
+# Kimi
 kimi login
+
+# Codex
+export OPENAI_API_KEY=sk-...
 ```
 
 ### Timeout errors

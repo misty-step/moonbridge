@@ -1,14 +1,14 @@
 [project]
 name = "moonbridge"
 dynamic = ["version"]
-description = "MCP server for spawning Kimi K2.5 agents"
+description = "MCP server for spawning AI coding agents (Kimi, Codex, and more)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
     {name = "Phaedrus", email = "hello@mistystep.io"}
 ]
-keywords = ["mcp", "kimi", "claude", "agent", "ai"]
+keywords = ["mcp", "kimi", "codex", "claude", "agent", "ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

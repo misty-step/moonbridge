@@ -1,4 +1,4 @@
-"""MCP server for spawning Kimi K2.5 agents."""
+"""MCP server for spawning AI coding agents."""
 
 from __future__ import annotations
 
