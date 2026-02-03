@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,35 @@ class AdapterConfig:
     supports_thinking: bool
     known_models: tuple[str, ...] = ()  # Known model options for this adapter
     default_timeout: int = 600
+
+
+@dataclass(frozen=True)
+class AgentResult:
+    """Agent execution result."""
+
+    status: str
+    output: str
+    stderr: str | None
+    returncode: int
+    duration_ms: int
+    agent_index: int
+    message: str | None = None
+    raw: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "status": self.status,
+            "output": self.output,
+            "stderr": self.stderr,
+            "returncode": self.returncode,
+            "duration_ms": self.duration_ms,
+            "agent_index": self.agent_index,
+        }
+        if self.message is not None:
+            payload["message"] = self.message
+        if self.raw is not None:
+            payload["raw"] = self.raw
+        return payload
 
 
 class CLIAdapter(Protocol):

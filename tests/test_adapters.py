@@ -1,8 +1,105 @@
 import pytest
 
 from moonbridge.adapters import CLIAdapter, get_adapter, list_adapters
+from moonbridge.adapters.base import AgentResult
 from moonbridge.adapters.codex import CodexAdapter
 from moonbridge.adapters.kimi import KimiAdapter
+
+# AgentResult tests
+
+
+class TestAgentResultToDict:
+    """Unit tests for AgentResult.to_dict() method."""
+
+    def test_base_fields_only(self) -> None:
+        """to_dict includes all required fields, omits None optionals."""
+        result = AgentResult(
+            status="success",
+            output="test output",
+            stderr=None,
+            returncode=0,
+            duration_ms=100,
+            agent_index=0,
+        )
+        d = result.to_dict()
+
+        assert d == {
+            "status": "success",
+            "output": "test output",
+            "stderr": None,
+            "returncode": 0,
+            "duration_ms": 100,
+            "agent_index": 0,
+        }
+        assert "message" not in d
+        assert "raw" not in d
+
+    def test_with_message(self) -> None:
+        """to_dict includes message when set."""
+        result = AgentResult(
+            status="auth_error",
+            output="",
+            stderr="auth failed",
+            returncode=1,
+            duration_ms=50,
+            agent_index=0,
+            message="Run: kimi login",
+        )
+        d = result.to_dict()
+
+        assert d["message"] == "Run: kimi login"
+        assert "raw" not in d
+
+    def test_with_raw(self) -> None:
+        """to_dict includes raw when set."""
+        raw_data = {"tokens": 150, "model": "gpt-5"}
+        result = AgentResult(
+            status="success",
+            output="output",
+            stderr=None,
+            returncode=0,
+            duration_ms=100,
+            agent_index=1,
+            raw=raw_data,
+        )
+        d = result.to_dict()
+
+        assert d["raw"] == raw_data
+        assert "message" not in d
+
+    def test_with_both_optional_fields(self) -> None:
+        """to_dict includes both message and raw when both set."""
+        result = AgentResult(
+            status="error",
+            output="",
+            stderr="error details",
+            returncode=1,
+            duration_ms=200,
+            agent_index=2,
+            message="Custom error",
+            raw={"debug": "info"},
+        )
+        d = result.to_dict()
+
+        assert d["message"] == "Custom error"
+        assert d["raw"] == {"debug": "info"}
+
+
+class TestAgentResultImmutability:
+    """Tests for AgentResult frozen dataclass behavior."""
+
+    def test_cannot_modify_fields(self) -> None:
+        """AgentResult fields cannot be reassigned after construction."""
+        result = AgentResult(
+            status="success",
+            output="test",
+            stderr=None,
+            returncode=0,
+            duration_ms=100,
+            agent_index=0,
+        )
+        with pytest.raises(AttributeError):
+            result.status = "error"  # type: ignore[misc]
 
 
 def test_kimi_adapter_build_command_basic():
