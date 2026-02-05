@@ -123,9 +123,49 @@ jobs:
         id: override
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
         run: |
-          OVERRIDE=$(gh pr view ${{ github.event.pull_request.number }} --json comments -q '.comments[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body}' | tail -1)
-          echo "override=$OVERRIDE" >> $GITHUB_OUTPUT
+          ACTOR_RULE="$(awk '/^  actor:/ {print $2; exit}' .github/cerberus/config.yml)"
+          if [[ -z "$ACTOR_RULE" ]]; then
+            ACTOR_RULE="pr_author"
+          fi
+
+          is_actor_allowed() {
+            local actor="$1"
+            local permission
+
+            case "$ACTOR_RULE" in
+              pr_author)
+                [[ "$actor" == "$PR_AUTHOR" ]]
+                ;;
+              write_access)
+                permission="$(gh api "repos/${REPO}/collaborators/${actor}/permission" --jq '.permission' 2>/dev/null || echo "none")"
+                [[ "$permission" == "write" || "$permission" == "maintain" || "$permission" == "admin" ]]
+                ;;
+              maintainers_only)
+                permission="$(gh api "repos/${REPO}/collaborators/${actor}/permission" --jq '.permission' 2>/dev/null || echo "none")"
+                [[ "$permission" == "maintain" || "$permission" == "admin" ]]
+                ;;
+              *)
+                false
+                ;;
+            esac
+          }
+
+          OVERRIDE=""
+          while IFS= read -r raw; do
+            actor="$(jq -r '.actor // ""' <<<"$raw")"
+            if is_actor_allowed "$actor"; then
+              OVERRIDE="$raw"
+            fi
+          done < <(
+            gh pr view "$PR_NUMBER" --json comments \
+              --jq '.comments[] | select(.body | startswith("/council override")) | {actor: .author.login, body: .body} | @json'
+          )
+
+          echo "override=$OVERRIDE" >> "$GITHUB_OUTPUT"
 
       - name: Aggregate verdicts
         env:
