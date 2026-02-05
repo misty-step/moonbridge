@@ -660,49 +660,6 @@ def test_run_cli_sandboxed_diff_and_preserves_host(
     assert (workspace / "remove.txt").exists()
 
 
-def test_diff_trees_no_changes(tmp_path: Any) -> None:
-    original = tmp_path / "original"
-    sandbox = tmp_path / "sandbox"
-    original.mkdir()
-    sandbox.mkdir()
-    (original / "a.txt").write_text("same", encoding="utf-8")
-    (sandbox / "a.txt").write_text("same", encoding="utf-8")
-
-    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 500_000)
-
-    assert diff == ""
-    assert summary == {"added": 0, "modified": 0, "deleted": 0, "binary": 0}
-    assert truncated is False
-
-
-def test_diff_trees_truncation(tmp_path: Any) -> None:
-    original = tmp_path / "original"
-    sandbox = tmp_path / "sandbox"
-    original.mkdir()
-    sandbox.mkdir()
-    (sandbox / "big.txt").write_text("x" * 1000, encoding="utf-8")
-
-    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 50)
-
-    assert truncated is True
-    assert "... diff truncated ..." in diff
-    assert summary["added"] == 1
-
-
-def test_diff_trees_binary_file(tmp_path: Any) -> None:
-    original = tmp_path / "original"
-    sandbox = tmp_path / "sandbox"
-    original.mkdir()
-    sandbox.mkdir()
-    (sandbox / "img.bin").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x80\xff")
-
-    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 500_000)
-
-    assert summary["added"] == 1
-    assert summary["binary"] == 1
-    assert "Binary files" in diff
-
-
 def test_run_cli_sandboxed_copytree_error(
     monkeypatch: Any,
     tmp_path: Any,

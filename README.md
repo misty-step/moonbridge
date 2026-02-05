@@ -138,6 +138,7 @@ All tools return JSON with these fields:
 | `MOONBRIDGE_SANDBOX` | Set to `1` to run agents in a temp copy of cwd |
 | `MOONBRIDGE_SANDBOX_KEEP` | Set to `1` to keep sandbox dir for inspection |
 | `MOONBRIDGE_SANDBOX_MAX_DIFF` | Max diff size in bytes (default 500000) |
+| `MOONBRIDGE_SANDBOX_MAX_COPY` | Max sandbox copy size in bytes (default 500MB) |
 | `MOONBRIDGE_LOG_LEVEL` | Set to `DEBUG` for verbose logging |
 
 ## Troubleshooting
@@ -222,6 +223,7 @@ Optional:
 ```bash
 export MOONBRIDGE_SANDBOX_KEEP=1       # keep temp dir
 export MOONBRIDGE_SANDBOX_MAX_DIFF=200000
+export MOONBRIDGE_SANDBOX_MAX_COPY=300000000
 ```
 
 Limitations: this is not OS-level isolation. Agents can still read/write arbitrary host paths if they choose to. Use containers/VMs for strong isolation.

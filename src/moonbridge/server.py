@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import difflib
 import json
 import logging
 import os
-import shutil
 import signal
 import sys
-import tempfile
 import time
 import weakref
 from dataclasses import replace
-from pathlib import Path
 from subprocess import PIPE, Popen, TimeoutExpired
 from typing import Any
 
@@ -49,19 +45,9 @@ SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in 
     "yes",
 }
 SANDBOX_MAX_DIFF_BYTES = int(os.environ.get("MOONBRIDGE_SANDBOX_MAX_DIFF", "500000"))
-SANDBOX_IGNORE_DIRS = {
-    ".git",
-    ".venv",
-    ".tox",
-    "__pycache__",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "node_modules",
-    "dist",
-    "build",
-}
-SANDBOX_IGNORE_FILES = {".DS_Store"}
+SANDBOX_MAX_COPY_BYTES = int(
+    os.environ.get("MOONBRIDGE_SANDBOX_MAX_COPY", str(500 * 1024 * 1024))
+)
 
 _active_processes: set[weakref.ref[Popen[str]]] = set()
 
@@ -174,136 +160,6 @@ def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
     return _validate_model(os.environ.get("MOONBRIDGE_MODEL"))
 
 
-def _is_ignored_dir(name: str) -> bool:
-    return name in SANDBOX_IGNORE_DIRS
-
-
-def _is_ignored_file(name: str) -> bool:
-    if name in SANDBOX_IGNORE_FILES:
-        return True
-    return name.endswith((".pyc", ".pyo"))
-
-
-def _collect_files(root: str) -> set[str]:
-    files: set[str] = set()
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not _is_ignored_dir(d)]
-        rel_dir = os.path.relpath(dirpath, root)
-        for filename in filenames:
-            if _is_ignored_file(filename):
-                continue
-            rel_path = filename if rel_dir == "." else os.path.join(rel_dir, filename)
-            files.add(rel_path)
-    return files
-
-
-def _read_text(path: str) -> str | None:
-    data = Path(path).read_bytes()
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-
-
-def _diff_trees(
-    original: str,
-    sandbox: str,
-    max_bytes: int,
-) -> tuple[str, dict[str, int], bool]:
-    original_files = _collect_files(original)
-    sandbox_files = _collect_files(sandbox)
-    all_files = sorted(original_files | sandbox_files)
-    diff_chunks: list[str] = []
-    size = 0
-    truncated = False
-    summary = {"added": 0, "modified": 0, "deleted": 0, "binary": 0}
-
-    def append_chunk(chunk: str) -> None:
-        nonlocal size, truncated
-        if truncated or not chunk:
-            return
-        remaining = max_bytes - size
-        if remaining <= 0:
-            truncated = True
-            return
-        if len(chunk) > remaining:
-            diff_chunks.append(chunk[:remaining])
-            truncated = True
-            size = max_bytes
-            return
-        diff_chunks.append(chunk)
-        size += len(chunk)
-
-    for rel_path in all_files:
-        original_path = os.path.join(original, rel_path)
-        sandbox_path = os.path.join(sandbox, rel_path)
-        original_exists = os.path.exists(original_path)
-        sandbox_exists = os.path.exists(sandbox_path)
-
-        if not original_exists and sandbox_exists:
-            summary["added"] += 1
-            sandbox_text = _read_text(sandbox_path)
-            if sandbox_text is None:
-                summary["binary"] += 1
-                append_chunk(f"Binary files /dev/null and b/{rel_path} differ\n")
-                continue
-            diff = difflib.unified_diff(
-                [],
-                sandbox_text.splitlines(keepends=True),
-                fromfile="/dev/null",
-                tofile=f"b/{rel_path}",
-            )
-            append_chunk("".join(diff))
-            continue
-
-        if original_exists and not sandbox_exists:
-            summary["deleted"] += 1
-            original_text = _read_text(original_path)
-            if original_text is None:
-                summary["binary"] += 1
-                append_chunk(f"Binary files a/{rel_path} and /dev/null differ\n")
-                continue
-            diff = difflib.unified_diff(
-                original_text.splitlines(keepends=True),
-                [],
-                fromfile=f"a/{rel_path}",
-                tofile="/dev/null",
-            )
-            append_chunk("".join(diff))
-            continue
-
-        if not original_exists or not sandbox_exists:
-            continue
-
-        original_bytes = Path(original_path).read_bytes()
-        sandbox_bytes = Path(sandbox_path).read_bytes()
-        if original_bytes == sandbox_bytes:
-            continue
-
-        original_text = None
-        sandbox_text = None
-        try:
-            original_text = original_bytes.decode("utf-8")
-            sandbox_text = sandbox_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            summary["binary"] += 1
-            append_chunk(f"Binary files a/{rel_path} and b/{rel_path} differ\n")
-            continue
-
-        summary["modified"] += 1
-        diff = difflib.unified_diff(
-            original_text.splitlines(keepends=True),
-            sandbox_text.splitlines(keepends=True),
-            fromfile=f"a/{rel_path}",
-            tofile=f"b/{rel_path}",
-        )
-        append_chunk("".join(diff))
-
-    if truncated:
-        diff_chunks.append("\n... diff truncated ...\n")
-    return ("".join(diff_chunks), summary, truncated)
-
-
 def _terminate_process(proc: Popen[str]) -> None:
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -360,22 +216,10 @@ def _run_cli_sandboxed(
     model: str | None = None,
     reasoning_effort: str | None = None,
 ) -> AgentResult:
-    start = time.monotonic()
-    sandbox_root = tempfile.mkdtemp(prefix="moonbridge-sandbox-")
-    sandbox_cwd = os.path.join(sandbox_root, "workspace")
-    try:
-        shutil.copytree(
-            cwd,
-            sandbox_cwd,
-            symlinks=False,
-            ignore=shutil.ignore_patterns(
-                *SANDBOX_IGNORE_DIRS,
-                *SANDBOX_IGNORE_FILES,
-                "*.pyc",
-                "*.pyo",
-            ),
-        )
-        result = _run_cli_sync(
+    from moonbridge.sandbox import run_sandboxed
+
+    def run_agent(sandbox_cwd: str) -> AgentResult:
+        return _run_cli_sync(
             adapter,
             prompt,
             thinking,
@@ -385,34 +229,28 @@ def _run_cli_sandboxed(
             model,
             reasoning_effort,
         )
-        try:
-            diff, summary, truncated = _diff_trees(cwd, sandbox_cwd, SANDBOX_MAX_DIFF_BYTES)
-            sandbox_payload: dict[str, Any] = {
-                "enabled": True,
-                "summary": summary,
-                "diff": diff,
-                "truncated": truncated,
-            }
-        except Exception as exc:
-            sandbox_payload = {"enabled": True, "error": str(exc)}
-        if SANDBOX_KEEP:
-            sandbox_payload["path"] = sandbox_root
+
+    run_agent.agent_index = agent_index  # type: ignore[attr-defined]
+
+    result, sandbox_result = run_sandboxed(
+        run_agent,
+        cwd,
+        max_diff_bytes=SANDBOX_MAX_DIFF_BYTES,
+        max_copy_bytes=SANDBOX_MAX_COPY_BYTES,
+        keep=SANDBOX_KEEP,
+    )
+    if sandbox_result:
         raw = dict(result.raw or {})
-        raw["sandbox"] = sandbox_payload
+        raw["sandbox"] = {
+            "enabled": True,
+            "summary": sandbox_result.summary,
+            "diff": sandbox_result.diff,
+            "truncated": sandbox_result.truncated,
+        }
+        if sandbox_result.sandbox_path:
+            raw["sandbox"]["path"] = sandbox_result.sandbox_path
         return replace(result, raw=raw)
-    except Exception as exc:
-        duration_ms = int((time.monotonic() - start) * 1000)
-        return AgentResult(
-            status="error",
-            output="",
-            stderr=f"sandbox error: {exc}",
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-    finally:
-        if not SANDBOX_KEEP:
-            shutil.rmtree(sandbox_root, ignore_errors=True)
+    return result
 
 
 def _run_cli_sync(
