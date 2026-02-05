@@ -160,6 +160,22 @@ def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
     return _validate_model(os.environ.get("MOONBRIDGE_MODEL"))
 
 
+def _preflight_check(adapter: CLIAdapter, agent_index: int = 0) -> AgentResult | None:
+    """Return an error AgentResult if adapter CLI is not available, else None."""
+    installed, _path = adapter.check_installed()
+    if not installed:
+        return AgentResult(
+            status="error",
+            output="",
+            stderr=f"{adapter.config.name} CLI not found",
+            returncode=-1,
+            duration_ms=0,
+            agent_index=agent_index,
+            message=f"Install: {adapter.config.install_hint}",
+        )
+    return None
+
+
 def _terminate_process(proc: Popen[str]) -> None:
     try:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -466,6 +482,9 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
             model = _resolve_model(adapter, arguments.get("model"))
             reasoning_effort = arguments.get("reasoning_effort")
+            preflight = _preflight_check(adapter, 0)
+            if preflight:
+                return _json_text(preflight.to_dict())
             loop = asyncio.get_running_loop()
             try:
                 result = await loop.run_in_executor(
@@ -499,12 +518,17 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 raise ValueError(f"Max {MAX_PARALLEL_AGENTS} agents allowed")
             loop = asyncio.get_running_loop()
             tasks = []
+            results: list[AgentResult] = []
             for idx, spec in enumerate(agents):
                 adapter = get_adapter(spec.get("adapter"))
                 prompt = _validate_prompt(spec["prompt"])
                 thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 model = _resolve_model(adapter, spec.get("model"))
                 reasoning_effort = spec.get("reasoning_effort")
+                preflight = _preflight_check(adapter, idx)
+                if preflight:
+                    results.append(preflight)
+                    continue
                 tasks.append(
                     loop.run_in_executor(
                         None,
@@ -520,7 +544,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     )
                 )
             try:
-                results = await asyncio.gather(*tasks)
+                task_results = await asyncio.gather(*tasks) if tasks else []
             except asyncio.CancelledError:
                 cancelled = [
                     AgentResult(
@@ -534,6 +558,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     for idx in range(len(agents))
                 ]
                 return _json_text([item.to_dict() for item in cancelled])
+            results.extend(task_results)
             results.sort(key=lambda item: item.agent_index)
             return _json_text([item.to_dict() for item in results])
 

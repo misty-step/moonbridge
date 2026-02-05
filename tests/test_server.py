@@ -19,7 +19,7 @@ server_module = importlib.import_module("moonbridge.server")
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_calls_kimi_cli(mock_popen: Any) -> None:
+async def test_spawn_agent_calls_kimi_cli(mock_popen: Any, mock_which_kimi: Any) -> None:
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
     payload = json.loads(result[0].text)
 
@@ -30,8 +30,22 @@ async def test_spawn_agent_calls_kimi_cli(mock_popen: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_agent_preflight_cli_missing(
+    mock_popen: Any, mock_which_no_kimi: Any
+) -> None:
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert payload["stderr"] == "kimi CLI not found"
+    assert payload["message"] == "Install: uv tool install kimi-cli"
+    assert payload["returncode"] == -1
+    mock_popen.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_spawn_agent_per_call_adapter_selection(
-    mock_popen: Any, monkeypatch: Any
+    mock_popen: Any, mock_which_codex: Any, monkeypatch: Any
 ) -> None:
     monkeypatch.setenv("MOONBRIDGE_ADAPTER", "kimi")
 
@@ -47,7 +61,9 @@ async def test_spawn_agent_per_call_adapter_selection(
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
+async def test_spawn_agent_thinking_adds_flag(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
     result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello", "thinking": True})
     payload = json.loads(result[0].text)
 
@@ -57,7 +73,9 @@ async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None:
+async def test_spawn_agents_parallel_runs_concurrently(
+    mock_which_kimi: Any, monkeypatch: Any
+) -> None:
     starts: list[float] = []
     ends: list[float] = []
     lock = threading.Lock()
@@ -103,7 +121,9 @@ async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None
 
 
 @pytest.mark.asyncio
-async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
+async def test_spawn_agents_parallel_mixed_adapters(
+    mock_which_kimi: Any, mock_which_codex: Any, monkeypatch: Any
+) -> None:
     seen: dict[int, str] = {}
 
     def fake_run(
@@ -145,7 +165,44 @@ async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> None:
+async def test_spawn_agents_parallel_preflight_mixed(
+    mock_popen: Any, mocker: Any
+) -> None:
+    def fake_which(cmd: str) -> str | None:
+        if cmd == "kimi":
+            return "/usr/local/bin/kimi"
+        if cmd == "codex":
+            return None
+        return None
+
+    mocker.patch("moonbridge.adapters.kimi.shutil.which", side_effect=fake_which)
+
+    result = await server_module.handle_tool(
+        "spawn_agents_parallel",
+        {
+            "agents": [
+                {"prompt": "one", "adapter": "kimi"},
+                {"prompt": "two", "adapter": "codex"},
+                {"prompt": "three", "adapter": "kimi"},
+            ]
+        },
+    )
+    payload = json.loads(result[0].text)
+
+    assert len(payload) == 3
+    by_index = {item["agent_index"]: item for item in payload}
+    assert by_index[0]["status"] == "success"
+    assert by_index[2]["status"] == "success"
+    assert by_index[1]["status"] == "error"
+    assert by_index[1]["stderr"] == "codex CLI not found"
+    assert by_index[1]["message"] == "Install: See https://github.com/openai/codex"
+    assert mock_popen.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_timeout_handling_returns_error(
+    mock_popen: Any, mock_which_kimi: Any, mocker: Any
+) -> None:
     process = mock_popen.return_value
     process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
     mocker.patch("moonbridge.server.os.killpg")
@@ -170,7 +227,7 @@ async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> N
     ],
 )
 async def test_popen_exceptions_return_error(
-    mock_popen: Any, exception: Exception, expected_stderr_part: str
+    mock_popen: Any, mock_which_kimi: Any, exception: Exception, expected_stderr_part: str
 ) -> None:
     mock_popen.side_effect = exception
 
@@ -183,7 +240,9 @@ async def test_popen_exceptions_return_error(
 
 
 @pytest.mark.asyncio
-async def test_nonzero_exit_returns_error_status(mock_popen: Any) -> None:
+async def test_nonzero_exit_returns_error_status(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
     process = mock_popen.return_value
     process.communicate.return_value = ("ok", "some error")
     process.returncode = 2
@@ -197,7 +256,9 @@ async def test_nonzero_exit_returns_error_status(mock_popen: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_exception_during_communicate(mock_popen: Any, mocker: Any) -> None:
+async def test_exception_during_communicate(
+    mock_popen: Any, mock_which_kimi: Any, mocker: Any
+) -> None:
     process = mock_popen.return_value
     process.communicate.side_effect = RuntimeError("boom")
     process.wait.return_value = None
@@ -212,7 +273,9 @@ async def test_exception_during_communicate(mock_popen: Any, mocker: Any) -> Non
 
 
 @pytest.mark.asyncio
-async def test_auth_detection_returns_actionable_message(mock_popen: Any) -> None:
+async def test_auth_detection_returns_actionable_message(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
     process = mock_popen.return_value
     process.communicate.return_value = ("", "Authentication failed")
     process.returncode = 1
@@ -980,7 +1043,9 @@ def test_resolve_model_codex_adapter_env(monkeypatch: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_with_model_param(mock_popen: Any) -> None:
+async def test_spawn_agent_with_model_param(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
     result = await server_module.handle_tool(
         "spawn_agent", {"prompt": "Hello", "model": "kimi-k2.5"}
     )
@@ -994,7 +1059,7 @@ async def test_spawn_agent_with_model_param(mock_popen: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_spawn_agent_with_codex_adapter_and_model(
-    mock_popen: Any, monkeypatch: Any
+    mock_popen: Any, mock_which_codex: Any, monkeypatch: Any
 ) -> None:
     monkeypatch.setenv("MOONBRIDGE_ADAPTER", "codex")
 
@@ -1011,7 +1076,9 @@ async def test_spawn_agent_with_codex_adapter_and_model(
 
 
 @pytest.mark.asyncio
-async def test_codex_adapter_thinking_rejected(monkeypatch: Any) -> None:
+async def test_codex_adapter_thinking_rejected(
+    mock_which_codex: Any, monkeypatch: Any
+) -> None:
     monkeypatch.setenv("MOONBRIDGE_ADAPTER", "codex")
 
     result = await server_module.handle_tool(
@@ -1024,7 +1091,9 @@ async def test_codex_adapter_thinking_rejected(monkeypatch: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
+async def test_spawn_agents_parallel_with_model(
+    mock_which_kimi: Any, monkeypatch: Any
+) -> None:
     calls: list[dict[str, Any]] = []
 
     def fake_run(
@@ -1065,7 +1134,9 @@ async def test_spawn_agents_parallel_with_model(monkeypatch: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_agent_with_reasoning_effort(monkeypatch: Any) -> None:
+async def test_spawn_agent_with_reasoning_effort(
+    mock_which_codex: Any, monkeypatch: Any
+) -> None:
     """Test that reasoning_effort is passed through to _run_cli_sync."""
     calls: list[dict[str, Any]] = []
 

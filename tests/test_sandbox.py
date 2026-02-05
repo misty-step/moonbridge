@@ -2,8 +2,6 @@ import importlib
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from moonbridge.adapters.base import AgentResult
 
 sandbox_module = importlib.import_module("moonbridge.sandbox")
