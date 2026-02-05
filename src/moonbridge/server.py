@@ -444,6 +444,11 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    """Build MCP tool metadata for the active adapter.
+
+    Returns:
+        list[Tool]: Tool descriptors with adapter-specific defaults and descriptions.
+    """
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
@@ -456,7 +461,15 @@ async def list_tools() -> list[Tool]:
 
 
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls. Exposed for testing."""
+    """Handle a tool invocation with validation and stable error payloads.
+
+    Args:
+        name: MCP tool name.
+        arguments: Tool argument payload.
+
+    Returns:
+        list[TextContent]: JSON-encoded result or error payload.
+    """
     try:
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
@@ -556,11 +569,24 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """MCP tool handler - delegates to handle_tool."""
+    """MCP tool handler that delegates to handle_tool for shared behavior.
+
+    Args:
+        name: MCP tool name.
+        arguments: Tool argument payload.
+
+    Returns:
+        list[TextContent]: JSON-encoded result or error payload.
+    """
     return await handle_tool(name, arguments)
 
 
 async def run() -> None:
+    """Run the MCP server over stdio until the client disconnects.
+
+    Returns:
+        None.
+    """
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -570,6 +596,14 @@ async def run() -> None:
 
 
 def main() -> None:
+    """CLI entry point that validates prerequisites then starts the server.
+
+    Returns:
+        None.
+
+    Raises:
+        SystemExit: If strict directory policy fails or the adapter CLI is missing.
+    """
     _configure_logging()
     _warn_if_unrestricted()
     from moonbridge import __version__
