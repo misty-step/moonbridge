@@ -96,7 +96,7 @@ max_context_size = 262144
 capabilities = ["thinking"]
 
 [providers.moonshot]
-type = "openai_legacy"
+type = "kimi"
 base_url = "${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
 api_key = "${KIMI_API_KEY}"
 
