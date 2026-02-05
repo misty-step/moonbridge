@@ -145,7 +145,7 @@ All tools return JSON with these fields:
 
 ### 1. Directory Restrictions (`MOONBRIDGE_ALLOWED_DIRS`)
 
-Default: agents can operate in any directory. Set `MOONBRIDGE_ALLOWED_DIRS` to restrict: colon-separated allowed paths. Symlinks resolved via `os.path.realpath` before checking. Strict mode (`MOONBRIDGE_STRICT=1`) exits on startup if `ALLOWED_DIRS` is unset.
+Default: agents can operate in any directory. Set `MOONBRIDGE_ALLOWED_DIRS` to restrict: colon-separated allowed paths. Symlinks resolved via `os.path.realpath` before checking. Strict mode (`MOONBRIDGE_STRICT=1`) exits on startup if no valid allowed directories are configured.
 
 ```bash
 export MOONBRIDGE_ALLOWED_DIRS="/home/user/projects:/home/user/work"
@@ -156,13 +156,15 @@ export MOONBRIDGE_STRICT=1  # require restrictions
 
 Only whitelisted env vars are passed to spawned agents. Each adapter defines its own allowlist (`PATH`, `HOME`, plus adapter-specific like `OPENAI_API_KEY` for Codex). Your shell environment (secrets, tokens, SSH keys) is not inherited by default.
 
-### 3. Process Isolation
+### 3. Input Validation
+
+Model parameters are validated to prevent flag injection (values starting with `-` are rejected). Prompts are capped at 100,000 characters and cannot be empty.
+
+### 4. Process Isolation
 
 Agents run in separate process groups (`start_new_session=True`). Orphan cleanup on exit. Sandbox mode available (`MOONBRIDGE_SANDBOX=1`) for copy-on-run isolation.
 
-### Important caveat
-
-Not OS-level sandboxing. Agents can still read arbitrary host files. For strong isolation, use containers/VMs.
+> **Not OS-level sandboxing.** Agents can still read arbitrary host files. For strong isolation, use containers/VMs.
 
 ## Troubleshooting
 
