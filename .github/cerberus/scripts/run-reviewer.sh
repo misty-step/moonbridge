@@ -117,23 +117,18 @@ kimi --quiet --thinking \
 exit_code=$?
 set -e
 
+# Always dump diagnostics for CI visibility
+output_size=$(wc -c < "/tmp/${perspective}-output.txt" 2>/dev/null || echo "0")
+echo "kimi exit=$exit_code output=${output_size} bytes"
+
 if [[ "$exit_code" -ne 0 ]]; then
-  echo "kimi exited with code $exit_code" >&2
   echo "--- stderr ---" >&2
   cat "/tmp/${perspective}-stderr.log" >&2
-  echo "--- output (last 20 lines) ---" >&2
-  tail -20 "/tmp/${perspective}-output.txt" >&2
 fi
 
-# Also check if output file is empty or too small
-output_size=$(wc -c < "/tmp/${perspective}-output.txt" 2>/dev/null || echo "0")
-if [[ "$output_size" -lt 100 ]]; then
-  echo "WARNING: output file is only ${output_size} bytes" >&2
-  echo "--- full output ---" >&2
-  cat "/tmp/${perspective}-output.txt" >&2
-  echo "--- stderr ---" >&2
-  cat "/tmp/${perspective}-stderr.log" >&2
-fi
+echo "--- output (last 40 lines) ---"
+tail -40 "/tmp/${perspective}-output.txt"
+echo "--- end output ---"
 
 echo "$exit_code" > "/tmp/${perspective}-exitcode"
 exit "$exit_code"
