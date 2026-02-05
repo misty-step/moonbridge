@@ -37,7 +37,7 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
-_TIMEOUT_TAIL_BYTES = 10_000
+_TIMEOUT_TAIL_CHARS = 10_000
 _SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
 SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
 SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
@@ -360,16 +360,18 @@ def _run_cli_sync(
             partial_stdout = str(partial_stdout)
         if not isinstance(partial_stderr, str):
             partial_stderr = str(partial_stderr)
-        if len(partial_stdout) > _TIMEOUT_TAIL_BYTES:
-            partial_stdout = "... [truncated] ...\n" + partial_stdout[-_TIMEOUT_TAIL_BYTES:]
-        if len(partial_stderr) > _TIMEOUT_TAIL_BYTES:
-            partial_stderr = "... [truncated] ...\n" + partial_stderr[-_TIMEOUT_TAIL_BYTES:]
+        captured_stdout_len = len(partial_stdout)
+        captured_stderr_len = len(partial_stderr)
+        if captured_stdout_len > _TIMEOUT_TAIL_CHARS:
+            partial_stdout = "... [truncated] ...\n" + partial_stdout[-_TIMEOUT_TAIL_CHARS:]
+        if captured_stderr_len > _TIMEOUT_TAIL_CHARS:
+            partial_stderr = "... [truncated] ...\n" + partial_stderr[-_TIMEOUT_TAIL_CHARS:]
         logger.warning(
-            "Agent %s timed out after %ss (captured %d bytes stdout, %d bytes stderr)",
+            "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
             agent_index,
             timeout_seconds,
-            len(partial_stdout),
-            len(partial_stderr),
+            captured_stdout_len,
+            captured_stderr_len,
         )
         return AgentResult(
             status="timeout",

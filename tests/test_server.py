@@ -147,7 +147,10 @@ async def test_spawn_agents_parallel_mixed_adapters(monkeypatch: Any) -> None:
 @pytest.mark.asyncio
 async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> None:
     process = mock_popen.return_value
-    process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
+    process.communicate.side_effect = [
+        TimeoutExpired(cmd="kimi", timeout=1),
+        ("", ""),
+    ]
     mocker.patch("moonbridge.server.os.killpg")
     process.wait.return_value = None
 
@@ -158,6 +161,8 @@ async def test_timeout_handling_returns_error(mock_popen: Any, mocker: Any) -> N
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "timeout"
+    assert payload["output"] == ""
+    assert payload["message"] == "Agent timed out after 30s"
 
 
 @pytest.mark.asyncio
@@ -189,8 +194,8 @@ async def test_spawn_agent_timeout_truncates_long_output(
     mock_popen: Any, mocker: Any
 ) -> None:
     process = mock_popen.return_value
-    long_output = "x" * (server_module._TIMEOUT_TAIL_BYTES + 50)
-    long_error = "y" * (server_module._TIMEOUT_TAIL_BYTES + 25)
+    long_output = "x" * (server_module._TIMEOUT_TAIL_CHARS + 50)
+    long_error = "y" * (server_module._TIMEOUT_TAIL_CHARS + 25)
     process.communicate.side_effect = [
         TimeoutExpired(cmd="kimi", timeout=1),
         (long_output, long_error),
@@ -206,9 +211,32 @@ async def test_spawn_agent_timeout_truncates_long_output(
 
     assert payload["status"] == "timeout"
     assert payload["output"].startswith("... [truncated] ...\n")
-    assert payload["output"].endswith(long_output[-server_module._TIMEOUT_TAIL_BYTES :])
+    assert payload["output"].endswith(long_output[-server_module._TIMEOUT_TAIL_CHARS :])
     assert payload["stderr"].startswith("... [truncated] ...\n")
-    assert payload["stderr"].endswith(long_error[-server_module._TIMEOUT_TAIL_BYTES :])
+    assert payload["stderr"].endswith(long_error[-server_module._TIMEOUT_TAIL_CHARS :])
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_timeout_fallback_reads_pipes(
+    mock_popen: Any, mocker: Any
+) -> None:
+    """When communicate() fails on retry, falls back to reading pipes directly."""
+    process = mock_popen.return_value
+    process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
+    mocker.patch("moonbridge.server.os.killpg")
+    process.wait.return_value = None
+    process.stdout.read.return_value = "fallback stdout"
+    process.stderr.read.return_value = "fallback stderr"
+
+    result = await server_module.handle_tool(
+        "spawn_agent",
+        {"prompt": "Hello", "timeout_seconds": 30},
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "timeout"
+    assert payload["output"] == "fallback stdout"
+    assert payload["stderr"] == "fallback stderr"
 
 
 @pytest.mark.asyncio
