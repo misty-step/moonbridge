@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.6.0...moonbridge-v0.7.0) (2026-02-05)
+
+
+### Features
+
+* add copy-on-run sandbox mode for agent execution ([#70](https://github.com/misty-step/moonbridge/issues/70)) ([0ae67bb](https://github.com/misty-step/moonbridge/commit/0ae67bb70ed9698791d2604074163f4d1ba3b1bc))
+
 ## [0.6.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.5.2...moonbridge-v0.6.0) (2026-02-03)
 
 
