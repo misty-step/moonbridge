@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: cerberus-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -71,6 +75,7 @@ jobs:
           echo "verdict=$(jq -r .verdict /tmp/${{ matrix.perspective }}-verdict.json)" >> $GITHUB_OUTPUT
 
       - name: Post PR comment
+        if: always() && steps.parse.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -79,12 +84,14 @@ jobs:
           .github/cerberus/scripts/post-comment.sh ${{ matrix.perspective }} /tmp/${{ matrix.perspective }}-verdict.json
 
       - name: Upload verdict artifact
+        if: always() && steps.parse.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: verdict-${{ matrix.perspective }}
           path: /tmp/${{ matrix.perspective }}-verdict.json
 
       - name: Check verdict
+        if: always() && steps.parse.outcome == 'success'
         run: |
           VERDICT=$(jq -r .verdict /tmp/${{ matrix.perspective }}-verdict.json)
           if [ "$VERDICT" = "FAIL" ]; then
