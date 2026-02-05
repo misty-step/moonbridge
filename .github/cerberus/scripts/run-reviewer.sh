@@ -96,7 +96,7 @@ kimi --print --thinking \
   --agent-file "$agent_file" \
   --prompt "$(cat /tmp/review-prompt.md)" \
   --output-format stream-json \
-  --config /tmp/kimi-config.toml \
+  --config-file /tmp/kimi-config.toml \
   > "/tmp/${perspective}-output.jsonl" 2> "/tmp/${perspective}-stderr.log"
 exit_code=$?
 set -e
