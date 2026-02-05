@@ -57,6 +57,19 @@ async def test_spawn_agent_thinking_adds_flag(mock_popen: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_agent_adds_quality_signals(mock_popen: Any) -> None:
+    process = mock_popen.return_value
+    process.communicate.return_value = ("== 5 passed in 0.12s ==", "")
+    process.returncode = 0
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert payload["raw"]["quality_signals"] == {"tests_passed": 5}
+
+
+@pytest.mark.asyncio
 async def test_spawn_agents_parallel_runs_concurrently(monkeypatch: Any) -> None:
     starts: list[float] = []
     ends: list[float] = []
