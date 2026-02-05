@@ -11,6 +11,7 @@ import signal
 import sys
 import time
 import weakref
+from dataclasses import replace
 from subprocess import PIPE, Popen, TimeoutExpired
 from typing import Any
 
@@ -36,6 +37,17 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
+_SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
+SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
+SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+SANDBOX_MAX_DIFF_BYTES = int(os.environ.get("MOONBRIDGE_SANDBOX_MAX_DIFF", "500000"))
+SANDBOX_MAX_COPY_BYTES = int(
+    os.environ.get("MOONBRIDGE_SANDBOX_MAX_COPY", str(500 * 1024 * 1024))
+)
 
 _active_processes: set[weakref.ref[Popen[str]]] = set()
 
@@ -194,6 +206,53 @@ def _auth_error(stderr: str | None, adapter: CLIAdapter) -> bool:
     return any(pattern in lowered for pattern in adapter.config.auth_patterns)
 
 
+def _run_cli_sandboxed(
+    adapter: CLIAdapter,
+    prompt: str,
+    thinking: bool,
+    cwd: str,
+    timeout_seconds: int,
+    agent_index: int,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+) -> AgentResult:
+    from moonbridge.sandbox import run_sandboxed
+
+    def run_agent(sandbox_cwd: str) -> AgentResult:
+        return _run_cli_sync(
+            adapter,
+            prompt,
+            thinking,
+            sandbox_cwd,
+            timeout_seconds,
+            agent_index,
+            model,
+            reasoning_effort,
+        )
+
+    run_agent.agent_index = agent_index  # type: ignore[attr-defined]
+
+    result, sandbox_result = run_sandboxed(
+        run_agent,
+        cwd,
+        max_diff_bytes=SANDBOX_MAX_DIFF_BYTES,
+        max_copy_bytes=SANDBOX_MAX_COPY_BYTES,
+        keep=SANDBOX_KEEP,
+    )
+    if sandbox_result:
+        raw = dict(result.raw or {})
+        raw["sandbox"] = {
+            "enabled": True,
+            "summary": sandbox_result.summary,
+            "diff": sandbox_result.diff,
+            "truncated": sandbox_result.truncated,
+        }
+        if sandbox_result.sandbox_path:
+            raw["sandbox"]["path"] = sandbox_result.sandbox_path
+        return replace(result, raw=raw)
+    return result
+
+
 def _run_cli_sync(
     adapter: CLIAdapter,
     prompt: str,
@@ -304,6 +363,39 @@ def _run_cli_sync(
         _untrack_process(proc)
 
 
+def _run_cli(
+    adapter: CLIAdapter,
+    prompt: str,
+    thinking: bool,
+    cwd: str,
+    timeout_seconds: int,
+    agent_index: int,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+) -> AgentResult:
+    if SANDBOX_MODE:
+        return _run_cli_sandboxed(
+            adapter,
+            prompt,
+            thinking,
+            cwd,
+            timeout_seconds,
+            agent_index,
+            model,
+            reasoning_effort,
+        )
+    return _run_cli_sync(
+        adapter,
+        prompt,
+        thinking,
+        cwd,
+        timeout_seconds,
+        agent_index,
+        model,
+        reasoning_effort,
+    )
+
+
 def _json_text(payload: Any) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=True))]
 
@@ -378,7 +470,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             try:
                 result = await loop.run_in_executor(
                     None,
-                    _run_cli_sync,
+                    _run_cli,
                     adapter,
                     prompt,
                     thinking,
@@ -416,7 +508,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 tasks.append(
                     loop.run_in_executor(
                         None,
-                        _run_cli_sync,
+                        _run_cli,
                         adapter,
                         prompt,
                         thinking,

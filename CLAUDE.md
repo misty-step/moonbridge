@@ -33,6 +33,7 @@ uv build                     # Build package
 ```
 src/moonbridge/
 ├── server.py          # MCP server implementation, tool handlers, process management
+├── sandbox.py         # Copy-on-run sandbox + diff utilities
 ├── version_check.py   # Update notification (24h cache)
 └── adapters/
     ├── base.py        # CLIAdapter protocol and AdapterConfig dataclass
