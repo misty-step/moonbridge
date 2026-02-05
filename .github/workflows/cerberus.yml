@@ -67,7 +67,7 @@ jobs:
       - name: Parse review output
         id: parse
         run: |
-          python3 .github/cerberus/scripts/parse-review.py /tmp/${{ matrix.perspective }}-output.jsonl > /tmp/${{ matrix.perspective }}-verdict.json
+          python3 .github/cerberus/scripts/parse-review.py /tmp/${{ matrix.perspective }}-output.txt > /tmp/${{ matrix.perspective }}-verdict.json
           echo "verdict=$(jq -r .verdict /tmp/${{ matrix.perspective }}-verdict.json)" >> $GITHUB_OUTPUT
 
       - name: Post PR comment

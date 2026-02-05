@@ -109,12 +109,11 @@ cat /tmp/kimi-config.toml | sed 's/api_key = ".*"/api_key = "***"/'
 echo "---"
 
 set +e
-kimi --print --thinking \
+kimi --quiet --thinking \
   --agent-file "$agent_file" \
   --prompt "$(cat /tmp/review-prompt.md)" \
-  --output-format stream-json \
   --config-file /tmp/kimi-config.toml \
-  > "/tmp/${perspective}-output.jsonl" 2> "/tmp/${perspective}-stderr.log"
+  > "/tmp/${perspective}-output.txt" 2> "/tmp/${perspective}-stderr.log"
 exit_code=$?
 set -e
 
@@ -123,15 +122,15 @@ if [[ "$exit_code" -ne 0 ]]; then
   echo "--- stderr ---" >&2
   cat "/tmp/${perspective}-stderr.log" >&2
   echo "--- output (last 20 lines) ---" >&2
-  tail -20 "/tmp/${perspective}-output.jsonl" >&2
+  tail -20 "/tmp/${perspective}-output.txt" >&2
 fi
 
 # Also check if output file is empty or too small
-output_size=$(wc -c < "/tmp/${perspective}-output.jsonl" 2>/dev/null || echo "0")
+output_size=$(wc -c < "/tmp/${perspective}-output.txt" 2>/dev/null || echo "0")
 if [[ "$output_size" -lt 100 ]]; then
   echo "WARNING: output file is only ${output_size} bytes" >&2
   echo "--- full output ---" >&2
-  cat "/tmp/${perspective}-output.jsonl" >&2
+  cat "/tmp/${perspective}-output.txt" >&2
   echo "--- stderr ---" >&2
   cat "/tmp/${perspective}-stderr.log" >&2
 fi
