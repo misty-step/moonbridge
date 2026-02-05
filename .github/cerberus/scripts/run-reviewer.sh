@@ -85,11 +85,28 @@ PY
 
 echo "Running reviewer: $reviewer_name ($perspective)"
 
-# Create temp config with step limit
+# Create temp config with model, provider, and step limit
 cat > /tmp/kimi-config.toml <<TOML
+default_model = "moonshot/kimi-k2.5"
+
+[models."moonshot/kimi-k2.5"]
+provider = "moonshot"
+model = "kimi-k2.5"
+max_context_size = 262144
+capabilities = ["thinking"]
+
+[providers.moonshot]
+type = "openai_legacy"
+base_url = "${KIMI_BASE_URL:-https://api.moonshot.ai/v1}"
+api_key = "${KIMI_API_KEY}"
+
 [loop_control]
 max_steps_per_turn = ${max_steps}
 TOML
+
+echo "--- config ---"
+cat /tmp/kimi-config.toml | sed 's/api_key = ".*"/api_key = "***"/'
+echo "---"
 
 set +e
 kimi --print --thinking \

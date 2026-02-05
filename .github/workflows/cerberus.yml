@@ -52,7 +52,8 @@ jobs:
 
       - name: Run ${{ matrix.reviewer }} review
         env:
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_BASE_URL: "https://api.moonshot.ai/v1"
           GH_PR_TITLE: ${{ steps.pr.outputs.title }}
           GH_PR_AUTHOR: ${{ steps.pr.outputs.author }}
           GH_PR_BODY: ${{ github.event.pull_request.body }}
