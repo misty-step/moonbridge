@@ -444,11 +444,7 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """Build MCP tool metadata for the active adapter.
-
-    Returns:
-        list[Tool]: Tool descriptors with adapter-specific defaults and descriptions.
-    """
+    """Build MCP tool metadata for the active adapter."""
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
@@ -461,14 +457,14 @@ async def list_tools() -> list[Tool]:
 
 
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle a tool invocation with validation and stable error payloads.
+    """Dispatch a tool invocation with validation and stable error payloads.
+
+    Separated from ``call_tool`` so tests can invoke tool logic without the
+    MCP decorator.
 
     Args:
-        name: MCP tool name.
-        arguments: Tool argument payload.
-
-    Returns:
-        list[TextContent]: JSON-encoded result or error payload.
+        name: MCP tool name (``spawn_agent``, ``spawn_agents_parallel``, etc.).
+        arguments: Tool argument payload from the MCP client.
     """
     try:
         cwd = _validate_cwd(None)
@@ -569,24 +565,12 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """MCP tool handler that delegates to handle_tool for shared behavior.
-
-    Args:
-        name: MCP tool name.
-        arguments: Tool argument payload.
-
-    Returns:
-        list[TextContent]: JSON-encoded result or error payload.
-    """
+    """MCP tool handler -- delegates to ``handle_tool`` for testability."""
     return await handle_tool(name, arguments)
 
 
 async def run() -> None:
-    """Run the MCP server over stdio until the client disconnects.
-
-    Returns:
-        None.
-    """
+    """Run the MCP server over stdio until the client disconnects."""
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -596,14 +580,7 @@ async def run() -> None:
 
 
 def main() -> None:
-    """CLI entry point that validates prerequisites then starts the server.
-
-    Returns:
-        None.
-
-    Raises:
-        SystemExit: If strict directory policy fails or the adapter CLI is missing.
-    """
+    """CLI entry point that validates prerequisites then starts the server."""
     _configure_logging()
     _warn_if_unrestricted()
     from moonbridge import __version__
