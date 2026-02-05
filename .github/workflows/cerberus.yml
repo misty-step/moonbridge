@@ -145,9 +145,10 @@ jobs:
           if [ "$VERDICT" = "FAIL" ]; then EMOJI="❌"; fi
           if [ "$VERDICT" = "WARN" ]; then EMOJI="⚠️"; fi
 
-          BODY="## ${EMOJI} Council Verdict: ${VERDICT}\n\n${SUMMARY}\n\n---\n*Cerberus Council*"
+          MARKER="<!-- cerberus:council -->"
+          BODY="${MARKER}\n## ${EMOJI} Council Verdict: ${VERDICT}\n\n${SUMMARY}\n\n---\n*Cerberus Council*"
 
-          EXISTING=$(gh pr view $PR_NUMBER --json comments -q '.comments[] | select(.body | contains("Council Verdict")) | .id' | head -1)
+          EXISTING=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --jq '.[] | select(.body | contains("cerberus:council")) | .id' | head -1)
           if [ -n "$EXISTING" ]; then
             gh api repos/${{ github.repository }}/issues/comments/$EXISTING -X PATCH -f body="$(echo -e "$BODY")"
           else
