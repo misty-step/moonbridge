@@ -1,5 +1,7 @@
 name: Cerberus Council
 
+# SECURITY: Do NOT change to pull_request_target.
+# That would expose secrets to fork PRs and enable expression injection.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -47,12 +49,15 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
-          echo "title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
+          echo "title=${PR_TITLE}" >> $GITHUB_OUTPUT
           echo "author=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
-          echo "head=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
-          echo "base=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
+          echo "head=${PR_HEAD_REF}" >> $GITHUB_OUTPUT
+          echo "base=${PR_BASE_REF}" >> $GITHUB_OUTPUT
 
       - name: Run ${{ matrix.reviewer }} review
         env:

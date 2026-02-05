@@ -36,4 +36,4 @@ Comment command: `/council override sha=<short-or-full-sha>`
 Rules:
 - reason required
 - sha must match current HEAD
-- actor requirements in `.github/cerberus/config.yml`
+- actor policy is global (`override.actor` in config.yml), not per-reviewer

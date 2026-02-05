@@ -3,6 +3,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def fail(msg: str, code: int = 2) -> None:
@@ -18,13 +19,13 @@ def read_input() -> str:
 
 def extract_json_block(text: str) -> str:
     pattern = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
-    matches = pattern.findall(text)
+    matches: list[str] = pattern.findall(text)
     if not matches:
         fail("no ```json block found")
     return matches[-1]
 
 
-def validate(obj: dict) -> None:
+def validate(obj: dict[str, Any]) -> None:
     required_root = [
         "reviewer",
         "perspective",

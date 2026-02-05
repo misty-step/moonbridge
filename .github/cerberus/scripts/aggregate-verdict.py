@@ -11,14 +11,16 @@ def fail(msg: str, code: int = 2) -> None:
     sys.exit(code)
 
 
-def read_json(path: Path) -> dict:
+def read_json(path: Path) -> dict[str, object]:
     try:
-        return json.loads(path.read_text())
+        result: dict[str, object] = json.loads(path.read_text())
+        return result
     except json.JSONDecodeError as exc:
         fail(f"invalid JSON in {path}: {exc}")
+        raise  # unreachable, satisfies mypy
 
 
-def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
+def parse_override(raw: str | None, head_sha: str | None) -> dict[str, str] | None:
     if not raw or raw.strip() in {"", "null", "None"}:
         return None
     try:
@@ -49,6 +51,9 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict | None:
                 reason = " ".join(remainder)
 
     if not sha or not reason:
+        return None
+
+    if len(sha) < 7:
         return None
 
     if head_sha and not (head_sha.startswith(sha) or sha.startswith(head_sha)):
@@ -97,7 +102,7 @@ def main() -> None:
         council_verdict = "PASS"
 
     summary = f"{len(verdicts)} reviewers. "
-    if override_used:
+    if override is not None:
         summary += f"Override by {override['actor']} for {override['sha']}."
     else:
         summary += f"Failures: {len(fails)}, warnings: {len(warns)}."
@@ -124,7 +129,7 @@ def main() -> None:
     lines.append("Reviewers:")
     for v in verdicts:
         lines.append(f"- {v['reviewer']} ({v['perspective']}): {v['verdict']}")
-    if override_used:
+    if override is not None:
         lines.extend(
             [
                 "",

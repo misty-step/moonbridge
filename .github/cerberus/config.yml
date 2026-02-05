@@ -32,34 +32,29 @@ reviewers:
   - name: APOLLO
     perspective: correctness
     description: "Correctness & Logic — Find the bug"
-    override: pr_author
     tools:
       shell: false
 
   - name: ATHENA
     perspective: architecture
     description: "Architecture & Design — Zoom out"
-    override: pr_author
     tools:
       shell: true
 
   - name: SENTINEL
     perspective: security
     description: "Security & Threat Model — Think like an attacker"
-    override: maintainers_only
     tools:
       shell: false
 
   - name: VULCAN
     perspective: performance
     description: "Performance & Scalability — Think at runtime"
-    override: pr_author
     tools:
       shell: true
 
   - name: ARTEMIS
     perspective: maintainability
     description: "Maintainability & DX — Think like the next developer"
-    override: pr_author
     tools:
       shell: true
