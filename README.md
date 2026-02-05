@@ -122,6 +122,7 @@ All tools return JSON with these fields:
 | `duration_ms` | int | Execution time in milliseconds |
 | `agent_index` | int | Agent index (0 for single, 0-N for parallel) |
 | `message` | string? | Human-readable error context (when applicable) |
+| `raw` | object? | Optional structured metadata (e.g., sandbox diff) |
 
 ## Configuration
 
@@ -134,6 +135,9 @@ All tools return JSON with these fields:
 | `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
 | `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |
 | `MOONBRIDGE_STRICT` | Set to `1` to require `ALLOWED_DIRS` (exits if unset) |
+| `MOONBRIDGE_SANDBOX` | Set to `1` to run agents in a temp copy of cwd |
+| `MOONBRIDGE_SANDBOX_KEEP` | Set to `1` to keep sandbox dir for inspection |
+| `MOONBRIDGE_SANDBOX_MAX_DIFF` | Max diff size in bytes (default 500000) |
 | `MOONBRIDGE_LOG_LEVEL` | Set to `DEBUG` for verbose logging |
 
 ## Troubleshooting
@@ -199,6 +203,28 @@ By default, Moonbridge warns at startup if no directory restrictions are configu
 ```bash
 export MOONBRIDGE_ALLOWED_DIRS="/path/to/project:/another/path"
 ```
+
+## Sandbox Mode (Copy-on-Run)
+
+Enable sandbox mode to run agents in a temporary copy of the working directory:
+
+```bash
+export MOONBRIDGE_SANDBOX=1
+```
+
+When enabled:
+- Agents run in a temp copy of `cwd`.
+- Host files stay unchanged by default.
+- A unified diff + summary is included in `raw.sandbox`.
+
+Optional:
+
+```bash
+export MOONBRIDGE_SANDBOX_KEEP=1       # keep temp dir
+export MOONBRIDGE_SANDBOX_MAX_DIFF=200000
+```
+
+Limitations: this is not OS-level isolation. Agents can still read/write arbitrary host paths if they choose to. Use containers/VMs for strong isolation.
 
 To enforce restrictions (exit instead of warn):
 

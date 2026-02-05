@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from subprocess import Popen, TimeoutExpired
 from typing import Any
 from unittest.mock import MagicMock, call
@@ -597,6 +598,180 @@ def test_validate_cwd_traversal_attempt(monkeypatch: Any, tmp_path: Any) -> None
 
     with pytest.raises(ValueError, match="cwd is not in MOONBRIDGE_ALLOWED_DIRS"):
         server_module._validate_cwd(traversal)
+
+
+def test_run_cli_sandboxed_diff_and_preserves_host(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    from moonbridge.adapters import get_adapter
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "keep.txt").write_text("keep", encoding="utf-8")
+    (workspace / "edit.txt").write_text("old", encoding="utf-8")
+    (workspace / "remove.txt").write_text("bye", encoding="utf-8")
+
+    def fake_run_cli_sync(
+        adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> AgentResult:
+        sandbox_cwd = Path(cwd)
+        (sandbox_cwd / "edit.txt").write_text("new", encoding="utf-8")
+        (sandbox_cwd / "add.txt").write_text("added", encoding="utf-8")
+        (sandbox_cwd / "remove.txt").unlink()
+        return AgentResult(
+            status="success",
+            output="ok",
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run_cli_sync)
+    adapter = get_adapter("kimi")
+
+    result = server_module._run_cli_sandboxed(
+        adapter,
+        "prompt",
+        False,
+        str(workspace),
+        60,
+        0,
+        None,
+        None,
+    )
+
+    sandbox = result.raw["sandbox"]
+    assert sandbox["summary"]["added"] == 1
+    assert sandbox["summary"]["modified"] == 1
+    assert sandbox["summary"]["deleted"] == 1
+    assert "edit.txt" in sandbox["diff"]
+
+    assert (workspace / "edit.txt").read_text(encoding="utf-8") == "old"
+    assert not (workspace / "add.txt").exists()
+    assert (workspace / "remove.txt").exists()
+
+
+def test_diff_trees_no_changes(tmp_path: Any) -> None:
+    original = tmp_path / "original"
+    sandbox = tmp_path / "sandbox"
+    original.mkdir()
+    sandbox.mkdir()
+    (original / "a.txt").write_text("same", encoding="utf-8")
+    (sandbox / "a.txt").write_text("same", encoding="utf-8")
+
+    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 500_000)
+
+    assert diff == ""
+    assert summary == {"added": 0, "modified": 0, "deleted": 0, "binary": 0}
+    assert truncated is False
+
+
+def test_diff_trees_truncation(tmp_path: Any) -> None:
+    original = tmp_path / "original"
+    sandbox = tmp_path / "sandbox"
+    original.mkdir()
+    sandbox.mkdir()
+    (sandbox / "big.txt").write_text("x" * 1000, encoding="utf-8")
+
+    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 50)
+
+    assert truncated is True
+    assert "... diff truncated ..." in diff
+    assert summary["added"] == 1
+
+
+def test_diff_trees_binary_file(tmp_path: Any) -> None:
+    original = tmp_path / "original"
+    sandbox = tmp_path / "sandbox"
+    original.mkdir()
+    sandbox.mkdir()
+    (sandbox / "img.bin").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x80\xff")
+
+    diff, summary, truncated = server_module._diff_trees(str(original), str(sandbox), 500_000)
+
+    assert summary["added"] == 1
+    assert summary["binary"] == 1
+    assert "Binary files" in diff
+
+
+def test_run_cli_sandboxed_copytree_error(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    from moonbridge.adapters import get_adapter
+
+    adapter = get_adapter("kimi")
+    result = server_module._run_cli_sandboxed(
+        adapter,
+        "prompt",
+        False,
+        str(tmp_path / "nonexistent"),
+        60,
+        0,
+        None,
+        None,
+    )
+
+    assert result.status == "error"
+    assert "sandbox error" in result.stderr
+
+
+def test_sandbox_ignores_git_dir(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    from moonbridge.adapters import get_adapter
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+    (workspace / ".git" / "config").write_text("gitconf", encoding="utf-8")
+    (workspace / "code.txt").write_text("code", encoding="utf-8")
+
+    def fake_run_cli_sync(
+        adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> AgentResult:
+        assert not Path(cwd).joinpath(".git").exists()
+        return AgentResult(
+            status="success",
+            output="ok",
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=agent_index,
+        )
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run_cli_sync)
+    adapter = get_adapter("kimi")
+
+    result = server_module._run_cli_sandboxed(
+        adapter,
+        "prompt",
+        False,
+        str(workspace),
+        60,
+        0,
+        None,
+        None,
+    )
+
+    assert result.status == "success"
 
 
 @pytest.fixture
