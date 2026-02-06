@@ -79,6 +79,22 @@ def _warn_if_unrestricted() -> None:
     print(message, file=sys.stderr)
 
 
+def _validate_allowed_dirs() -> None:
+    if not ALLOWED_DIRS:
+        return
+    missing_count = 0
+    for path in ALLOWED_DIRS:
+        if os.path.isdir(path):
+            continue
+        missing_count += 1
+        logger.warning("MOONBRIDGE_ALLOWED_DIRS entry does not exist: %s", path)
+    if missing_count == len(ALLOWED_DIRS) and STRICT_MODE:
+        message = "MOONBRIDGE_ALLOWED_DIRS entries do not exist"
+        logger.error(message)
+        print(message, file=sys.stderr)
+        sys.exit(1)
+
+
 def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
     env = {key: os.environ[key] for key in adapter.config.safe_env_keys if key in os.environ}
     if "PATH" not in env and "PATH" in os.environ:
@@ -409,6 +425,12 @@ def _json_text(payload: Any) -> list[TextContent]:
 
 
 def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
+    config = {
+        "strict_mode": STRICT_MODE,
+        "allowed_dirs": ALLOWED_DIRS or None,
+        "unrestricted": not ALLOWED_DIRS,
+        "cwd": cwd,
+    }
     installed, _path = adapter.check_installed()
     if not installed:
         return {
@@ -416,20 +438,27 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
             "message": (
                 f"{adapter.config.name} CLI not found. Install: {adapter.config.install_hint}"
             ),
+            "config": config,
         }
     timeout = min(DEFAULT_TIMEOUT, 60)
     result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
     if result.status == "auth_error":
-        return {"status": "auth_error", "message": adapter.config.auth_message}
+        return {
+            "status": "auth_error",
+            "message": adapter.config.auth_message,
+            "config": config,
+        }
     if result.status == "success":
         return {
             "status": "success",
             "message": f"{adapter.config.name} CLI available and authenticated",
+            "config": config,
         }
     return {
         "status": "error",
         "message": f"{adapter.config.name} CLI error",
         "details": result.to_dict(),
+        "config": config,
     }
 
 
@@ -591,6 +620,7 @@ def main() -> None:
     """CLI entry point that validates prerequisites then starts the server."""
     _configure_logging()
     _warn_if_unrestricted()
+    _validate_allowed_dirs()
     from moonbridge import __version__
     from moonbridge.version_check import check_for_updates
 
