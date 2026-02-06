@@ -21,6 +21,7 @@ from mcp.types import TextContent, Tool
 
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
 from moonbridge.adapters.base import AgentResult
+from moonbridge.signals import extract_quality_signals
 from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
@@ -327,7 +328,7 @@ def _run_cli_sync(
             )
         status = "success" if proc.returncode == 0 else "error"
         logger.info("Agent %s completed with status: %s", agent_index, status)
-        return AgentResult(
+        result = AgentResult(
             status=status,
             output=stdout,
             stderr=stderr_value,
@@ -335,6 +336,13 @@ def _run_cli_sync(
             duration_ms=duration_ms,
             agent_index=agent_index,
         )
+        if result.status == "success":
+            signals = extract_quality_signals(result.output, result.stderr)
+            if signals:
+                raw = dict(result.raw or {})
+                raw["quality_signals"] = signals
+                result = replace(result, raw=raw)
+        return result
     except TimeoutExpired:
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
