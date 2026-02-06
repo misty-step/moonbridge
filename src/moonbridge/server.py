@@ -38,6 +38,7 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
+_TIMEOUT_TAIL_CHARS = 10_000
 _SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
 SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
 SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
@@ -362,14 +363,48 @@ def _run_cli_sync(
     except TimeoutExpired:
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
-        logger.warning("Agent %s timed out after %s seconds", agent_index, timeout_seconds)
+        partial_stdout = ""
+        partial_stderr = ""
+        try:
+            remaining_out, remaining_err = proc.communicate(timeout=5)
+            partial_stdout = remaining_out or ""
+            partial_stderr = remaining_err or ""
+        except Exception:
+            try:
+                if proc.stdout:
+                    partial_stdout = proc.stdout.read() or ""
+            except Exception:
+                pass
+            try:
+                if proc.stderr:
+                    partial_stderr = proc.stderr.read() or ""
+            except Exception:
+                pass
+        if not isinstance(partial_stdout, str):
+            partial_stdout = str(partial_stdout)
+        if not isinstance(partial_stderr, str):
+            partial_stderr = str(partial_stderr)
+        captured_stdout_len = len(partial_stdout)
+        captured_stderr_len = len(partial_stderr)
+        if captured_stdout_len > _TIMEOUT_TAIL_CHARS:
+            partial_stdout = "... [truncated] ...\n" + partial_stdout[-_TIMEOUT_TAIL_CHARS:]
+        if captured_stderr_len > _TIMEOUT_TAIL_CHARS:
+            partial_stderr = "... [truncated] ...\n" + partial_stderr[-_TIMEOUT_TAIL_CHARS:]
+        logger.warning(
+            "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
+            agent_index,
+            timeout_seconds,
+            captured_stdout_len,
+            captured_stderr_len,
+        )
         return AgentResult(
             status="timeout",
-            output="",
-            stderr=None,
+            output=partial_stdout,
+            stderr=partial_stderr or None,
             returncode=-1,
             duration_ms=duration_ms,
             agent_index=agent_index,
+            message=f"Agent timed out after {timeout_seconds}s",
         )
     except Exception as exc:
         _terminate_process(proc)
