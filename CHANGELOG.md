@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.7.0...moonbridge-v0.8.0) (2026-02-06)
+
+
+### Features
+
+* add gpt-5.3-codex to known models ([#81](https://github.com/misty-step/moonbridge/issues/81)) ([7f16b5d](https://github.com/misty-step/moonbridge/commit/7f16b5dc0c0aa0f0aa7a40e99856a87c8ba49c2c))
+
 ## [0.7.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.6.0...moonbridge-v0.7.0) (2026-02-05)
 
 
