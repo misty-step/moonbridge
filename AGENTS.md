@@ -31,9 +31,13 @@ Verdict rules:
 - PASS: otherwise
 
 ## Override Protocol
-Comment command: `/council override sha=<short-or-full-sha>`
+
+```
+/council override sha=<sha>
+reason: <justification for overriding>
+```
 
 Rules:
-- reason required
-- sha must match current HEAD
+- reason required (line after command, or `reason:` prefix)
+- sha must be 7-40 hex chars and match current HEAD
 - actor policy is global (`override.actor` in config.yml), not per-reviewer

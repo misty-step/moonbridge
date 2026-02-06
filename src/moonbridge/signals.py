@@ -55,11 +55,11 @@ def extract_quality_signals(output: str, stderr: str | None = None) -> dict[str,
         combined = f"{output}\n{stderr}"
 
     tests_passed = _last_int(_PASSED_RE, combined)
-    if tests_passed:
+    if tests_passed is not None:
         signals["tests_passed"] = tests_passed
 
     tests_failed = _last_int(_FAILED_RE, combined)
-    if tests_failed:
+    if tests_failed is not None:
         signals["tests_failed"] = tests_failed
 
     if stderr and _ERROR_RE.search(stderr):

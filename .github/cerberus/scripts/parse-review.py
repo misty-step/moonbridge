@@ -18,11 +18,11 @@ def read_input() -> str:
 
 
 def extract_json_block(text: str) -> str:
-    pattern = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+    pattern = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
     matches: list[str] = pattern.findall(text)
     if not matches:
         fail("no ```json block found")
-    return matches[-1]
+    return matches[-1].strip()
 
 
 def validate(obj: dict[str, Any]) -> None:
@@ -69,10 +69,12 @@ def validate(obj: dict[str, Any]) -> None:
         if not isinstance(finding["line"], int):
             try:
                 finding["line"] = int(finding["line"])
-            except Exception as exc:
+            except (ValueError, TypeError) as exc:
                 fail(f"finding {idx} line not int: {exc}")
 
     stats = obj["stats"]
+    if not isinstance(stats, dict):
+        fail("stats must be an object")
     for skey in [
         "files_reviewed",
         "files_with_issues",

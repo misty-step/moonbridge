@@ -8,7 +8,6 @@ if [[ -z "$perspective" ]]; then
 fi
 
 config_file=".github/cerberus/config.yml"
-template_file=".github/cerberus/templates/review-prompt.md"
 agent_file=".github/cerberus/agents/${perspective}.yaml"
 
 if [[ ! -f "$agent_file" ]]; then

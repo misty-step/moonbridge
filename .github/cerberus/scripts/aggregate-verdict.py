@@ -27,6 +27,8 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict[str, str] | No
         obj = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    if not isinstance(obj, dict):
+        return None
 
     actor = obj.get("actor") or obj.get("author") or "unknown"
     sha = obj.get("sha")
@@ -53,10 +55,10 @@ def parse_override(raw: str | None, head_sha: str | None) -> dict[str, str] | No
     if not sha or not reason:
         return None
 
-    if len(sha) < 7:
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
         return None
 
-    if head_sha and not (head_sha.startswith(sha) or sha.startswith(head_sha)):
+    if head_sha and not head_sha.startswith(sha):
         return None
 
     return {
@@ -75,17 +77,27 @@ def main() -> None:
     if not verdict_files:
         fail("no verdict files found")
 
+    valid_verdicts = {"PASS", "WARN", "FAIL"}
     verdicts = []
     for path in verdict_files:
         data = read_json(path)
+        raw_verdict = str(data.get("verdict", "FAIL")).strip().upper()
+        if raw_verdict not in valid_verdicts:
+            fail(f"invalid verdict '{raw_verdict}' in {path}")
         verdicts.append(
             {
                 "reviewer": data.get("reviewer", path.stem),
                 "perspective": data.get("perspective", path.stem),
-                "verdict": data.get("verdict", "FAIL"),
+                "verdict": raw_verdict,
                 "summary": data.get("summary", ""),
             }
         )
+
+    expected = {"correctness", "architecture", "security", "performance", "maintainability"}
+    found = {str(v["perspective"]) for v in verdicts}
+    missing = expected - found
+    if missing:
+        fail(f"missing reviewer verdicts: {', '.join(sorted(missing))}")
 
     head_sha = os.environ.get("GH_HEAD_SHA")
     override = parse_override(os.environ.get("GH_OVERRIDE_COMMENT"), head_sha)
