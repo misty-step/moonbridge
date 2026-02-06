@@ -50,6 +50,7 @@ class CodexAdapter:
         install_hint="See https://github.com/openai/codex",
         supports_thinking=False,
         known_models=(
+            "gpt-5.3-codex",
             "gpt-5.2-codex",
             "gpt-5.1-codex",
             "gpt-5.1-codex-mini",
