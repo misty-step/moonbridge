@@ -61,6 +61,32 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 
 **Best for:** Tasks that benefit from parallel execution or volume.
 
+## How it Works
+
+### Connection Flow
+1. MCP client (Claude Code, Cursor, etc.) connects to Moonbridge over stdio
+2. Client discovers available tools via `list_tools`
+3. Client calls `spawn_agent` or `spawn_agents_parallel`
+
+### Spawn Process
+1. Moonbridge validates the prompt and working directory
+2. Resolves which adapter to use (Kimi, Codex)
+3. Adapter builds the CLI command with appropriate flags
+4. Spawns subprocess in a separate process group
+5. Captures stdout/stderr, enforces timeout
+6. Returns structured JSON result
+
+### Parallel Execution
+- `spawn_agents_parallel` runs up to 10 agents concurrently via `asyncio.gather`
+- Each agent is independent (separate process, separate output)
+- All results returned together when the last agent finishes (or times out)
+
+```
+MCP Client → stdio → Moonbridge → adapter → CLI subprocess
+                                          → CLI subprocess (parallel)
+                                          → CLI subprocess (parallel)
+```
+
 ## Tools
 
 | Tool | Use case |
