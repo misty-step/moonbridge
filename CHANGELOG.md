@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.9.0...moonbridge-v0.10.0) (2026-02-06)
+
+
+### Features
+
+* capture partial output on timeout with tail diagnostics ([#79](https://github.com/misty-step/moonbridge/issues/79)) ([fb233bb](https://github.com/misty-step/moonbridge/commit/fb233bb16b856daa452476dab48e8e67fcdd1bad))
+
 ## [0.9.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.8.0...moonbridge-v0.9.0) (2026-02-06)
 
 
