@@ -89,11 +89,13 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 | `MOONBRIDGE_LOG_LEVEL` | `WARNING` | Logging verbosity |
 | `MOONBRIDGE_MODEL` | (none) | Global default model for all adapters |
 | `MOONBRIDGE_KIMI_MODEL` | (none) | Kimi-specific model override |
-| `MOONBRIDGE_CODEX_MODEL` | (none) | Codex-specific model override |
+| `MOONBRIDGE_CODEX_MODEL` | (none) | Codex-specific model override (default model: `gpt-5.3-codex`) |
 
 Timeout resolution order: tool param > adapter env var > adapter default > global env var > 600s.
 
-Model resolution order: tool param > adapter env var > global env var > CLI default.
+Model resolution order: tool param > adapter env var > global env var > adapter default > CLI default.
+
+Reasoning effort resolution order: tool param > adapter default (`codex` = `xhigh`).
 
 All model values are validated: whitespace is stripped, empty strings become None, and models starting with `-` are rejected (flag injection prevention).
 

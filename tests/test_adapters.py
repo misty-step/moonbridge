@@ -285,6 +285,8 @@ def test_codex_adapter_config_values():
     assert adapter.config.name == "codex"
     assert adapter.config.cli_command == "codex"
     assert adapter.config.supports_thinking is False
+    assert adapter.config.default_model == "gpt-5.3-codex"
+    assert adapter.config.default_reasoning_effort == "xhigh"
     assert "OPENAI_API_KEY" in adapter.config.safe_env_keys
     assert "Codex" in adapter.config.tool_description
 
