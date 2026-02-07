@@ -166,7 +166,7 @@ def _validate_model(model: str | None) -> str | None:
 
 
 def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
-    """Resolve model: param > adapter env > global env > None.
+    """Resolve model: param > adapter env > global env > adapter default > None.
 
     All values are validated and normalized.
     """
@@ -175,7 +175,17 @@ def _resolve_model(adapter: CLIAdapter, model_param: str | None) -> str | None:
     adapter_env = f"MOONBRIDGE_{adapter.config.name.upper()}_MODEL"
     if validated := _validate_model(os.environ.get(adapter_env)):
         return validated
-    return _validate_model(os.environ.get("MOONBRIDGE_MODEL"))
+    if validated := _validate_model(os.environ.get("MOONBRIDGE_MODEL")):
+        return validated
+    return adapter.config.default_model
+
+
+def _resolve_reasoning_effort(
+    adapter: CLIAdapter, reasoning_effort_param: str | None
+) -> str | None:
+    if reasoning_effort_param and (value := reasoning_effort_param.strip()):
+        return value
+    return adapter.config.default_reasoning_effort
 
 
 def _preflight_check(adapter: CLIAdapter, agent_index: int = 0) -> AgentResult | None:
@@ -562,7 +572,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
             timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
             model = _resolve_model(adapter, arguments.get("model"))
-            reasoning_effort = arguments.get("reasoning_effort")
+            reasoning_effort = _resolve_reasoning_effort(adapter, arguments.get("reasoning_effort"))
             preflight = _preflight_check(adapter, 0)
             if preflight:
                 return _json_text(preflight.to_dict())
@@ -605,7 +615,7 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                 prompt = _validate_prompt(spec["prompt"])
                 thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
                 model = _resolve_model(adapter, spec.get("model"))
-                reasoning_effort = spec.get("reasoning_effort")
+                reasoning_effort = _resolve_reasoning_effort(adapter, spec.get("reasoning_effort"))
                 preflight = _preflight_check(adapter, idx)
                 if preflight:
                     results.append(preflight)

@@ -118,9 +118,9 @@ Three approaches. One request. You choose the winner.
 |-----------|------|----------|-------------|
 | `prompt` | string | Yes | Task description for the agent |
 | `adapter` | string | No | Backend to use: `kimi`, `codex` (default: `kimi`) |
-| `model` | string | No | Model override (e.g., `gpt-5.2-codex`) |
+| `model` | string | No | Model override (e.g., `gpt-5.2-codex`). For `codex`, default is `gpt-5.3-codex`. |
 | `thinking` | boolean | No | Enable reasoning mode (Kimi only) |
-| `reasoning_effort` | string | No | Reasoning budget: `low`, `medium`, `high`, `xhigh` (Codex only) |
+| `reasoning_effort` | string | No | Reasoning budget: `low`, `medium`, `high`, `xhigh` (Codex only, default `xhigh`) |
 | `timeout_seconds` | integer | No | Override default timeout (30-3600) |
 
 **`spawn_agents_parallel`**
@@ -130,9 +130,9 @@ Three approaches. One request. You choose the winner.
 | `agents` | array | Yes | List of agent configs (max 10) |
 | `agents[].prompt` | string | Yes | Task for this agent |
 | `agents[].adapter` | string | No | Backend for this agent |
-| `agents[].model` | string | No | Model override for this agent |
+| `agents[].model` | string | No | Model override for this agent (`codex` default: `gpt-5.3-codex`) |
 | `agents[].thinking` | boolean | No | Enable reasoning (Kimi only) |
-| `agents[].reasoning_effort` | string | No | Reasoning budget (Codex only) |
+| `agents[].reasoning_effort` | string | No | Reasoning budget (Codex only, default `xhigh`) |
 | `agents[].timeout_seconds` | integer | No | Timeout for this agent |
 
 ## Response Format

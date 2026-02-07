@@ -16,6 +16,8 @@ class AdapterConfig:
     supports_thinking: bool
     known_models: tuple[str, ...] = ()  # Known model options for this adapter
     default_timeout: int = 600
+    default_model: str | None = None
+    default_reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
