@@ -73,6 +73,21 @@ async def test_spawn_agent_thinking_adds_flag(
 
 
 @pytest.mark.asyncio
+async def test_spawn_agent_adds_quality_signals(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
+    process = mock_popen.return_value
+    process.communicate.return_value = ("== 5 passed in 0.12s ==", "")
+    process.returncode = 0
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert payload["raw"]["quality_signals"] == {"tests_passed": 5}
+
+
+@pytest.mark.asyncio
 async def test_spawn_agents_parallel_runs_concurrently(
     mock_which_kimi: Any, monkeypatch: Any
 ) -> None:
@@ -204,7 +219,10 @@ async def test_timeout_handling_returns_error(
     mock_popen: Any, mock_which_kimi: Any, mocker: Any
 ) -> None:
     process = mock_popen.return_value
-    process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
+    process.communicate.side_effect = [
+        TimeoutExpired(cmd="kimi", timeout=1),
+        ("", ""),
+    ]
     mocker.patch("moonbridge.server.os.killpg")
     process.wait.return_value = None
 
@@ -215,6 +233,82 @@ async def test_timeout_handling_returns_error(
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "timeout"
+    assert payload["output"] == ""
+    assert payload["message"] == "Agent timed out after 30s"
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_timeout_captures_partial_output(
+    mock_popen: Any, mocker: Any
+) -> None:
+    process = mock_popen.return_value
+    process.communicate.side_effect = [
+        TimeoutExpired(cmd="kimi", timeout=1),
+        ("partial stdout", "partial stderr"),
+    ]
+    mocker.patch("moonbridge.server.os.killpg")
+    process.wait.return_value = None
+
+    result = await server_module.handle_tool(
+        "spawn_agent",
+        {"prompt": "Hello", "timeout_seconds": 30},
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "timeout"
+    assert payload["output"] == "partial stdout"
+    assert payload["stderr"] == "partial stderr"
+    assert payload["message"] == "Agent timed out after 30s"
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_timeout_truncates_long_output(
+    mock_popen: Any, mocker: Any
+) -> None:
+    process = mock_popen.return_value
+    long_output = "x" * (server_module._TIMEOUT_TAIL_CHARS + 50)
+    long_error = "y" * (server_module._TIMEOUT_TAIL_CHARS + 25)
+    process.communicate.side_effect = [
+        TimeoutExpired(cmd="kimi", timeout=1),
+        (long_output, long_error),
+    ]
+    mocker.patch("moonbridge.server.os.killpg")
+    process.wait.return_value = None
+
+    result = await server_module.handle_tool(
+        "spawn_agent",
+        {"prompt": "Hello", "timeout_seconds": 30},
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "timeout"
+    assert payload["output"].startswith("... [truncated] ...\n")
+    assert payload["output"].endswith(long_output[-server_module._TIMEOUT_TAIL_CHARS :])
+    assert payload["stderr"].startswith("... [truncated] ...\n")
+    assert payload["stderr"].endswith(long_error[-server_module._TIMEOUT_TAIL_CHARS :])
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_timeout_fallback_reads_pipes(
+    mock_popen: Any, mocker: Any
+) -> None:
+    """When communicate() fails on retry, falls back to reading pipes directly."""
+    process = mock_popen.return_value
+    process.communicate.side_effect = TimeoutExpired(cmd="kimi", timeout=1)
+    mocker.patch("moonbridge.server.os.killpg")
+    process.wait.return_value = None
+    process.stdout.read.return_value = "fallback stdout"
+    process.stderr.read.return_value = "fallback stderr"
+
+    result = await server_module.handle_tool(
+        "spawn_agent",
+        {"prompt": "Hello", "timeout_seconds": 30},
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "timeout"
+    assert payload["output"] == "fallback stdout"
+    assert payload["stderr"] == "fallback stderr"
 
 
 @pytest.mark.asyncio
@@ -322,6 +416,25 @@ async def test_check_status_not_installed(mock_which_no_kimi: Any) -> None:
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_check_status_includes_config(
+    mock_which_no_kimi: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", [])
+    monkeypatch.setattr(server_module, "STRICT_MODE", True)
+    monkeypatch.setattr(server_module.os, "getcwd", lambda: "/workdir")
+
+    result = await server_module.handle_tool("check_status", {})
+    payload = json.loads(result[0].text)
+
+    assert "config" in payload
+    config = payload["config"]
+    assert config["strict_mode"] is True
+    assert config["allowed_dirs"] is None
+    assert config["unrestricted"] is True
+    assert config["cwd"] == server_module.os.path.realpath("/workdir")
 
 
 @pytest.mark.asyncio
@@ -495,6 +608,45 @@ def test_warn_if_unrestricted_no_warning_when_restricted(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert not caplog.records
+
+
+def test_validate_allowed_dirs_warns_missing(monkeypatch: Any, caplog: Any) -> None:
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", ["/missing"])
+    monkeypatch.setattr(server_module.os.path, "isdir", lambda _path: False)
+    caplog.set_level(logging.WARNING, logger="moonbridge")
+
+    server_module._validate_allowed_dirs()
+
+    assert any(
+        record.levelno == logging.WARNING
+        and record.getMessage() == "MOONBRIDGE_ALLOWED_DIRS entry does not exist: /missing"
+        for record in caplog.records
+    )
+
+
+def test_validate_allowed_dirs_strict_all_missing_exits(
+    monkeypatch: Any, caplog: Any, mocker: Any
+) -> None:
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", ["/missing", "/missing2"])
+    monkeypatch.setattr(server_module, "STRICT_MODE", True)
+    monkeypatch.setattr(server_module.os.path, "isdir", lambda _path: False)
+    exit_mock = mocker.patch("moonbridge.server.sys.exit")
+    caplog.set_level(logging.ERROR, logger="moonbridge")
+
+    server_module._validate_allowed_dirs()
+
+    exit_mock.assert_called_once_with(1)
+
+
+def test_validate_allowed_dirs_some_valid_no_exit(monkeypatch: Any, mocker: Any) -> None:
+    monkeypatch.setattr(server_module, "ALLOWED_DIRS", ["/missing", "/valid"])
+    monkeypatch.setattr(server_module, "STRICT_MODE", True)
+    monkeypatch.setattr(server_module.os.path, "isdir", lambda path: path == "/valid")
+    exit_mock = mocker.patch("moonbridge.server.sys.exit")
+
+    server_module._validate_allowed_dirs()
+
+    exit_mock.assert_not_called()
 
 
 def test_resolve_timeout_uses_adapter_default(monkeypatch: Any) -> None:

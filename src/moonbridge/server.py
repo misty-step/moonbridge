@@ -21,6 +21,7 @@ from mcp.types import TextContent, Tool
 
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
 from moonbridge.adapters.base import AgentResult
+from moonbridge.signals import extract_quality_signals
 from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
@@ -37,6 +38,7 @@ ALLOWED_DIRS = [
     if path
 ]
 MAX_PROMPT_LENGTH = 100_000
+_TIMEOUT_TAIL_CHARS = 10_000
 _SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
 SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
 SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
@@ -76,6 +78,22 @@ def _warn_if_unrestricted() -> None:
         return
     logger.warning(message)
     print(message, file=sys.stderr)
+
+
+def _validate_allowed_dirs() -> None:
+    if not ALLOWED_DIRS:
+        return
+    missing_count = 0
+    for path in ALLOWED_DIRS:
+        if os.path.isdir(path):
+            continue
+        missing_count += 1
+        logger.warning("MOONBRIDGE_ALLOWED_DIRS entry does not exist: %s", path)
+    if missing_count == len(ALLOWED_DIRS) and STRICT_MODE:
+        message = "MOONBRIDGE_ALLOWED_DIRS entries do not exist"
+        logger.error(message)
+        print(message, file=sys.stderr)
+        sys.exit(1)
 
 
 def _safe_env(adapter: CLIAdapter) -> dict[str, str]:
@@ -343,7 +361,7 @@ def _run_cli_sync(
             )
         status = "success" if proc.returncode == 0 else "error"
         logger.info("Agent %s completed with status: %s", agent_index, status)
-        return AgentResult(
+        result = AgentResult(
             status=status,
             output=stdout,
             stderr=stderr_value,
@@ -351,17 +369,58 @@ def _run_cli_sync(
             duration_ms=duration_ms,
             agent_index=agent_index,
         )
+        if result.status == "success":
+            signals = extract_quality_signals(result.output, result.stderr)
+            if signals:
+                raw = dict(result.raw or {})
+                raw["quality_signals"] = signals
+                result = replace(result, raw=raw)
+        return result
     except TimeoutExpired:
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
-        logger.warning("Agent %s timed out after %s seconds", agent_index, timeout_seconds)
+        partial_stdout = ""
+        partial_stderr = ""
+        try:
+            remaining_out, remaining_err = proc.communicate(timeout=5)
+            partial_stdout = remaining_out or ""
+            partial_stderr = remaining_err or ""
+        except Exception:
+            try:
+                if proc.stdout:
+                    partial_stdout = proc.stdout.read() or ""
+            except Exception:
+                pass
+            try:
+                if proc.stderr:
+                    partial_stderr = proc.stderr.read() or ""
+            except Exception:
+                pass
+        if not isinstance(partial_stdout, str):
+            partial_stdout = str(partial_stdout)
+        if not isinstance(partial_stderr, str):
+            partial_stderr = str(partial_stderr)
+        captured_stdout_len = len(partial_stdout)
+        captured_stderr_len = len(partial_stderr)
+        if captured_stdout_len > _TIMEOUT_TAIL_CHARS:
+            partial_stdout = "... [truncated] ...\n" + partial_stdout[-_TIMEOUT_TAIL_CHARS:]
+        if captured_stderr_len > _TIMEOUT_TAIL_CHARS:
+            partial_stderr = "... [truncated] ...\n" + partial_stderr[-_TIMEOUT_TAIL_CHARS:]
+        logger.warning(
+            "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
+            agent_index,
+            timeout_seconds,
+            captured_stdout_len,
+            captured_stderr_len,
+        )
         return AgentResult(
             status="timeout",
-            output="",
-            stderr=None,
+            output=partial_stdout,
+            stderr=partial_stderr or None,
             returncode=-1,
             duration_ms=duration_ms,
             agent_index=agent_index,
+            message=f"Agent timed out after {timeout_seconds}s",
         )
     except Exception as exc:
         _terminate_process(proc)
@@ -417,6 +476,12 @@ def _json_text(payload: Any) -> list[TextContent]:
 
 
 def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
+    config = {
+        "strict_mode": STRICT_MODE,
+        "allowed_dirs": ALLOWED_DIRS or None,
+        "unrestricted": not ALLOWED_DIRS,
+        "cwd": cwd,
+    }
     installed, _path = adapter.check_installed()
     if not installed:
         return {
@@ -424,20 +489,27 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
             "message": (
                 f"{adapter.config.name} CLI not found. Install: {adapter.config.install_hint}"
             ),
+            "config": config,
         }
     timeout = min(DEFAULT_TIMEOUT, 60)
     result = _run_cli_sync(adapter, "status check", False, cwd, timeout, 0)
     if result.status == "auth_error":
-        return {"status": "auth_error", "message": adapter.config.auth_message}
+        return {
+            "status": "auth_error",
+            "message": adapter.config.auth_message,
+            "config": config,
+        }
     if result.status == "success":
         return {
             "status": "success",
             "message": f"{adapter.config.name} CLI available and authenticated",
+            "config": config,
         }
     return {
         "status": "error",
         "message": f"{adapter.config.name} CLI error",
         "details": result.to_dict(),
+        "config": config,
     }
 
 
@@ -460,6 +532,7 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    """Build MCP tool metadata for the active adapter."""
     adapter = get_adapter()
     tool_desc = adapter.config.tool_description
     status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
@@ -472,7 +545,15 @@ async def list_tools() -> list[Tool]:
 
 
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls. Exposed for testing."""
+    """Dispatch a tool invocation with validation and stable error payloads.
+
+    Separated from ``call_tool`` so tests can invoke tool logic without the
+    MCP decorator.
+
+    Args:
+        name: MCP tool name (``spawn_agent``, ``spawn_agents_parallel``, etc.).
+        arguments: Tool argument payload from the MCP client.
+    """
     try:
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
@@ -581,11 +662,12 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """MCP tool handler - delegates to handle_tool."""
+    """MCP tool handler -- delegates to ``handle_tool`` for testability."""
     return await handle_tool(name, arguments)
 
 
 async def run() -> None:
+    """Run the MCP server over stdio until the client disconnects."""
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -595,8 +677,10 @@ async def run() -> None:
 
 
 def main() -> None:
+    """CLI entry point that validates prerequisites then starts the server."""
     _configure_logging()
     _warn_if_unrestricted()
+    _validate_allowed_dirs()
     from moonbridge import __version__
     from moonbridge.version_check import check_for_updates
 

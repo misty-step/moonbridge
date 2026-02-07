@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.9.0...moonbridge-v0.10.0) (2026-02-06)
+
+
+### Features
+
+* capture partial output on timeout with tail diagnostics ([#79](https://github.com/misty-step/moonbridge/issues/79)) ([fb233bb](https://github.com/misty-step/moonbridge/commit/fb233bb16b856daa452476dab48e8e67fcdd1bad))
+
+## [0.9.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.8.0...moonbridge-v0.9.0) (2026-02-06)
+
+
+### Features
+
+* add structured output parsing with quality signals ([#76](https://github.com/misty-step/moonbridge/issues/76)) ([1318a03](https://github.com/misty-step/moonbridge/commit/1318a03f42556fa6d9366bd8e67ae465fd8a235a))
+* validate MOONBRIDGE_ALLOWED_DIRS and expose config health ([#67](https://github.com/misty-step/moonbridge/issues/67)) ([#78](https://github.com/misty-step/moonbridge/issues/78)) ([bf5af9b](https://github.com/misty-step/moonbridge/commit/bf5af9b7e5d13e8c24776d3e4ff154af04e1b2a7))
+
+## [0.8.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.7.0...moonbridge-v0.8.0) (2026-02-06)
+
+
+### Features
+
+* add gpt-5.3-codex to known models ([#81](https://github.com/misty-step/moonbridge/issues/81)) ([7f16b5d](https://github.com/misty-step/moonbridge/commit/7f16b5dc0c0aa0f0aa7a40e99856a87c8ba49c2c))
+
+## [0.7.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.6.0...moonbridge-v0.7.0) (2026-02-05)
+
+
+### Features
+
+* add copy-on-run sandbox mode for agent execution ([#70](https://github.com/misty-step/moonbridge/issues/70)) ([0ae67bb](https://github.com/misty-step/moonbridge/commit/0ae67bb70ed9698791d2604074163f4d1ba3b1bc))
+
 ## [0.6.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.5.2...moonbridge-v0.6.0) (2026-02-03)
 
 

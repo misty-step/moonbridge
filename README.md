@@ -61,6 +61,32 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 
 **Best for:** Tasks that benefit from parallel execution or volume.
 
+## How it Works
+
+### Connection Flow
+1. MCP client (Claude Code, Cursor, etc.) connects to Moonbridge over stdio
+2. Client discovers available tools via `list_tools`
+3. Client calls `spawn_agent` or `spawn_agents_parallel`
+
+### Spawn Process
+1. Moonbridge validates the prompt and working directory
+2. Resolves which adapter to use (Kimi, Codex)
+3. Adapter builds the CLI command with appropriate flags
+4. Spawns subprocess in a separate process group
+5. Captures stdout/stderr, enforces timeout
+6. Returns structured JSON result
+
+### Parallel Execution
+- `spawn_agents_parallel` runs up to 10 agents concurrently via `asyncio.gather`
+- Each agent is independent (separate process, separate output)
+- All results returned together when the last agent finishes (or times out)
+
+```
+MCP Client → stdio → Moonbridge → adapter → CLI subprocess
+                                          → CLI subprocess (parallel)
+                                          → CLI subprocess (parallel)
+```
+
 ## Tools
 
 | Tool | Use case |
@@ -140,6 +166,31 @@ All tools return JSON with these fields:
 | `MOONBRIDGE_SANDBOX_MAX_DIFF` | Max diff size in bytes (default 500000) |
 | `MOONBRIDGE_SANDBOX_MAX_COPY` | Max sandbox copy size in bytes (default 500MB) |
 | `MOONBRIDGE_LOG_LEVEL` | Set to `DEBUG` for verbose logging |
+
+## Security
+
+### 1. Directory Restrictions (`MOONBRIDGE_ALLOWED_DIRS`)
+
+Default: agents can operate in any directory. Set `MOONBRIDGE_ALLOWED_DIRS` to restrict: colon-separated allowed paths. Symlinks resolved via `os.path.realpath` before checking. Strict mode (`MOONBRIDGE_STRICT=1`) exits on startup if no valid allowed directories are configured.
+
+```bash
+export MOONBRIDGE_ALLOWED_DIRS="/home/user/projects:/home/user/work"
+export MOONBRIDGE_STRICT=1  # require restrictions
+```
+
+### 2. Environment Sanitization
+
+Only whitelisted env vars are passed to spawned agents. Each adapter defines its own allowlist (`PATH`, `HOME`, plus adapter-specific like `OPENAI_API_KEY` for Codex). Your shell environment (secrets, tokens, SSH keys) is not inherited by default.
+
+### 3. Input Validation
+
+Model parameters are validated to prevent flag injection (values starting with `-` are rejected). Prompts are capped at 100,000 characters and cannot be empty.
+
+### 4. Process Isolation
+
+Agents run in separate process groups (`start_new_session=True`). Orphan cleanup on exit. Sandbox mode available (`MOONBRIDGE_SANDBOX=1`) for copy-on-run isolation.
+
+> **Not OS-level sandboxing.** Agents can still read arbitrary host files. For strong isolation, use containers/VMs.
 
 ## Troubleshooting
 
