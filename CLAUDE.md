@@ -84,6 +84,7 @@ The MCP library is also stubbed in conftest when not installed, enabling tests t
 | `MOONBRIDGE_CODEX_TIMEOUT` | `1800` | Codex-specific timeout (30min default) |
 | `MOONBRIDGE_KIMI_TIMEOUT` | `600` | Kimi-specific timeout (10min default) |
 | `MOONBRIDGE_MAX_AGENTS` | `10` | Max parallel agents |
+| `MOONBRIDGE_MAX_OUTPUT_CHARS` | `120000` | Max chars returned per agent across `stdout`+`stderr` (timeout tails are per stream) |
 | `MOONBRIDGE_ALLOWED_DIRS` | (none) | Colon-separated directory allowlist |
 | `MOONBRIDGE_STRICT` | `false` | Exit if ALLOWED_DIRS unset |
 | `MOONBRIDGE_LOG_LEVEL` | `WARNING` | Logging verbosity |

@@ -286,6 +286,56 @@ async def test_spawn_agent_timeout_truncates_long_output(
     assert payload["output"].endswith(long_output[-server_module._TIMEOUT_TAIL_CHARS :])
     assert payload["stderr"].startswith("... [truncated] ...\n")
     assert payload["stderr"].endswith(long_error[-server_module._TIMEOUT_TAIL_CHARS :])
+    assert payload["raw"]["output_limit"]["scope"] == "per_stream"
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_success_truncates_large_output(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
+    process = mock_popen.return_value
+    long_output = "o" * (server_module.MAX_OUTPUT_CHARS + 120)
+    long_error = "e" * (server_module.MAX_OUTPUT_CHARS + 64)
+    process.communicate.return_value = (long_output, long_error)
+    process.returncode = 0
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert "... [truncated " in payload["output"]
+    assert payload["output"].startswith(long_output[:128])
+    assert payload["output"].endswith(long_output[-128:])
+    assert "... [truncated " in payload["stderr"]
+    assert payload["stderr"].startswith(long_error[:128])
+    assert payload["stderr"].endswith(long_error[-128:])
+    assert payload["raw"]["output_limit"]["max_chars"] == server_module.MAX_OUTPUT_CHARS
+    assert payload["raw"]["output_limit"]["scope"] == "combined_streams"
+    assert payload["raw"]["output_limit"]["stdout_original_chars"] == len(long_output)
+    assert payload["raw"]["output_limit"]["stderr_original_chars"] == len(long_error)
+    assert (
+        len(payload["output"]) + len(payload["stderr"])
+        <= server_module.MAX_OUTPUT_CHARS + 200
+    )
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_auth_error_truncates_large_stderr(
+    mock_popen: Any, mock_which_kimi: Any
+) -> None:
+    process = mock_popen.return_value
+    long_error = "Authentication failed " + ("x" * server_module.MAX_OUTPUT_CHARS)
+    process.communicate.return_value = ("", long_error)
+    process.returncode = 1
+
+    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "auth_error"
+    assert payload["message"] == "Run: kimi login"
+    assert "... [truncated " in payload["stderr"]
+    assert payload["raw"]["output_limit"]["scope"] == "combined_streams"
+    assert payload["raw"]["output_limit"]["stderr_original_chars"] == len(long_error)
 
 
 @pytest.mark.asyncio
