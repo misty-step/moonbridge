@@ -150,6 +150,9 @@ All tools return JSON with these fields:
 | `message` | string? | Human-readable error context (when applicable) |
 | `raw` | object? | Optional structured metadata (e.g., sandbox diff) |
 
+When output is too large, Moonbridge truncates it and adds `raw.output_limit` metadata
+with original sizes.
+
 ## Configuration
 
 ### Environment Variables
@@ -159,6 +162,7 @@ All tools return JSON with these fields:
 | `MOONBRIDGE_ADAPTER` | Default adapter (default: `kimi`) |
 | `MOONBRIDGE_TIMEOUT` | Default timeout in seconds (30-3600) |
 | `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
+| `MOONBRIDGE_MAX_OUTPUT_CHARS` | Max chars returned per agent across `stdout`+`stderr` (default 120000; timeout tails are per stream) |
 | `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |
 | `MOONBRIDGE_STRICT` | Set to `1` to require `ALLOWED_DIRS` (exits if unset) |
 | `MOONBRIDGE_SANDBOX` | Set to `1` to run agents in a temp copy of cwd |

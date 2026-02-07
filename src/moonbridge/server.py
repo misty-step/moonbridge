@@ -39,6 +39,7 @@ ALLOWED_DIRS = [
 ]
 MAX_PROMPT_LENGTH = 100_000
 _TIMEOUT_TAIL_CHARS = 10_000
+MAX_OUTPUT_CHARS = int(os.environ.get("MOONBRIDGE_MAX_OUTPUT_CHARS", "120000"))
 _SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
 SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
 SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
@@ -250,6 +251,92 @@ def _auth_error(stderr: str | None, adapter: CLIAdapter) -> bool:
     return any(pattern in lowered for pattern in adapter.config.auth_patterns)
 
 
+def _truncate_stream(
+    value: str,
+    max_chars: int,
+    *,
+    tail_only: bool = False,
+) -> tuple[str, int | None]:
+    if max_chars <= 0:
+        if not value:
+            return value, None
+        return "... [truncated] ...", len(value)
+    if len(value) <= max_chars:
+        return value, None
+    original_chars = len(value)
+    if tail_only:
+        return "... [truncated] ...\n" + value[-max_chars:], original_chars
+    head_chars = max_chars // 2
+    tail_chars = max_chars - head_chars
+    omitted_chars = original_chars - max_chars
+    truncated = (
+        value[:head_chars]
+        + f"\n... [truncated {omitted_chars} chars] ...\n"
+        + value[-tail_chars:]
+    )
+    return truncated, original_chars
+
+
+def _apply_output_limit(
+    result: AgentResult,
+    max_chars: int,
+    *,
+    tail_only: bool = False,
+) -> AgentResult:
+    stderr_original_chars: int | None = None
+    if tail_only:
+        output, output_original_chars = _truncate_stream(
+            result.output,
+            max_chars,
+            tail_only=True,
+        )
+        stderr = result.stderr
+        if stderr is not None:
+            stderr, stderr_original_chars = _truncate_stream(
+                stderr,
+                max_chars,
+                tail_only=True,
+            )
+    else:
+        output_chars = len(result.output)
+        stderr_chars = len(result.stderr or "")
+        total_chars = output_chars + stderr_chars
+        if total_chars <= max_chars:
+            return result
+
+        if stderr_chars == 0:
+            output_budget = max_chars
+            stderr_budget = 0
+        elif output_chars == 0:
+            output_budget = 0
+            stderr_budget = max_chars
+        else:
+            output_budget = max(1, int(max_chars * (output_chars / total_chars)))
+            stderr_budget = max_chars - output_budget
+            if stderr_budget <= 0:
+                stderr_budget = 1
+                output_budget = max_chars - 1
+
+        output, output_original_chars = _truncate_stream(result.output, output_budget)
+        stderr = result.stderr
+        if stderr is not None:
+            stderr, stderr_original_chars = _truncate_stream(stderr, stderr_budget)
+
+    if output_original_chars is None and stderr_original_chars is None:
+        return result
+
+    raw = dict(result.raw or {})
+    limit_payload = dict(raw.get("output_limit") or {})
+    limit_payload["max_chars"] = max_chars
+    limit_payload["scope"] = "per_stream" if tail_only else "combined_streams"
+    if output_original_chars is not None:
+        limit_payload["stdout_original_chars"] = output_original_chars
+    if stderr_original_chars is not None:
+        limit_payload["stderr_original_chars"] = stderr_original_chars
+    raw["output_limit"] = limit_payload
+    return replace(result, output=output, stderr=stderr, raw=raw)
+
+
 def _run_cli_sandboxed(
     adapter: CLIAdapter,
     prompt: str,
@@ -360,14 +447,17 @@ def _run_cli_sync(
         stderr_value = stderr or None
         if _auth_error(stderr_value, adapter):
             logger.info("Agent %s completed with status: auth_error", agent_index)
-            return AgentResult(
-                status="auth_error",
-                output=stdout,
-                stderr=stderr_value,
-                returncode=proc.returncode,
-                duration_ms=duration_ms,
-                agent_index=agent_index,
-                message=adapter.config.auth_message,
+            return _apply_output_limit(
+                AgentResult(
+                    status="auth_error",
+                    output=stdout,
+                    stderr=stderr_value,
+                    returncode=proc.returncode,
+                    duration_ms=duration_ms,
+                    agent_index=agent_index,
+                    message=adapter.config.auth_message,
+                ),
+                MAX_OUTPUT_CHARS,
             )
         status = "success" if proc.returncode == 0 else "error"
         logger.info("Agent %s completed with status: %s", agent_index, status)
@@ -385,7 +475,7 @@ def _run_cli_sync(
                 raw = dict(result.raw or {})
                 raw["quality_signals"] = signals
                 result = replace(result, raw=raw)
-        return result
+        return _apply_output_limit(result, MAX_OUTPUT_CHARS)
     except TimeoutExpired:
         _terminate_process(proc)
         duration_ms = int((time.monotonic() - start) * 1000)
@@ -412,10 +502,6 @@ def _run_cli_sync(
             partial_stderr = str(partial_stderr)
         captured_stdout_len = len(partial_stdout)
         captured_stderr_len = len(partial_stderr)
-        if captured_stdout_len > _TIMEOUT_TAIL_CHARS:
-            partial_stdout = "... [truncated] ...\n" + partial_stdout[-_TIMEOUT_TAIL_CHARS:]
-        if captured_stderr_len > _TIMEOUT_TAIL_CHARS:
-            partial_stderr = "... [truncated] ...\n" + partial_stderr[-_TIMEOUT_TAIL_CHARS:]
         logger.warning(
             "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
             agent_index,
@@ -423,14 +509,18 @@ def _run_cli_sync(
             captured_stdout_len,
             captured_stderr_len,
         )
-        return AgentResult(
-            status="timeout",
-            output=partial_stdout,
-            stderr=partial_stderr or None,
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-            message=f"Agent timed out after {timeout_seconds}s",
+        return _apply_output_limit(
+            AgentResult(
+                status="timeout",
+                output=partial_stdout,
+                stderr=partial_stderr or None,
+                returncode=-1,
+                duration_ms=duration_ms,
+                agent_index=agent_index,
+                message=f"Agent timed out after {timeout_seconds}s",
+            ),
+            _TIMEOUT_TAIL_CHARS,
+            tail_only=True,
         )
     except Exception as exc:
         _terminate_process(proc)
