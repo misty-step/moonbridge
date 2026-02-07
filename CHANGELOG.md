@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.10.0...moonbridge-v0.11.0) (2026-02-07)
+
+
+### Features
+
+* preflight adapter CLI availability check before spawn ([#77](https://github.com/misty-step/moonbridge/issues/77)) ([097fd7b](https://github.com/misty-step/moonbridge/commit/097fd7b0d6079b55c1e74e338c08c5cce18a2872))
+
 ## [0.10.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.9.0...moonbridge-v0.10.0) (2026-02-06)
 
 
