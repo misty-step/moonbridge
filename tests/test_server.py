@@ -239,7 +239,7 @@ async def test_timeout_handling_returns_error(
 
 @pytest.mark.asyncio
 async def test_spawn_agent_timeout_captures_partial_output(
-    mock_popen: Any, mocker: Any
+    mock_popen: Any, mock_which_kimi: Any, mocker: Any
 ) -> None:
     process = mock_popen.return_value
     process.communicate.side_effect = [
@@ -263,7 +263,7 @@ async def test_spawn_agent_timeout_captures_partial_output(
 
 @pytest.mark.asyncio
 async def test_spawn_agent_timeout_truncates_long_output(
-    mock_popen: Any, mocker: Any
+    mock_popen: Any, mock_which_kimi: Any, mocker: Any
 ) -> None:
     process = mock_popen.return_value
     long_output = "x" * (server_module._TIMEOUT_TAIL_CHARS + 50)
@@ -290,7 +290,7 @@ async def test_spawn_agent_timeout_truncates_long_output(
 
 @pytest.mark.asyncio
 async def test_spawn_agent_timeout_fallback_reads_pipes(
-    mock_popen: Any, mocker: Any
+    mock_popen: Any, mock_which_kimi: Any, mocker: Any
 ) -> None:
     """When communicate() fails on retry, falls back to reading pipes directly."""
     process = mock_popen.return_value
