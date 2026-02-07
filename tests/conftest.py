@@ -90,3 +90,17 @@ def mock_which_kimi(mocker):
 def mock_which_no_kimi(mocker):
     """Mock shutil.which to NOT find kimi."""
     return mocker.patch("moonbridge.adapters.kimi.shutil.which", return_value=None)
+
+
+@pytest.fixture
+def mock_which_codex(mocker):
+    """Mock shutil.which to find codex."""
+    return mocker.patch(
+        "moonbridge.adapters.codex.shutil.which", return_value="/usr/local/bin/codex"
+    )
+
+
+@pytest.fixture
+def mock_which_no_codex(mocker):
+    """Mock shutil.which to NOT find codex."""
+    return mocker.patch("moonbridge.adapters.codex.shutil.which", return_value=None)
