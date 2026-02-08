@@ -105,6 +105,7 @@ async def test_spawn_agents_parallel_runs_concurrently(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         with lock:
             starts.append(time.monotonic())
@@ -150,6 +151,7 @@ async def test_spawn_agents_parallel_mixed_adapters(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         seen[agent_index] = adapter.config.name
         return AgentResult(
@@ -442,6 +444,7 @@ async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) ->
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         return AgentResult(
             status="success",
@@ -498,6 +501,7 @@ async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         return AgentResult(
             status="success",
@@ -886,6 +890,7 @@ def test_run_cli_sandboxed_diff_and_preserves_host(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         sandbox_cwd = Path(cwd)
         (sandbox_cwd / "edit.txt").write_text("new", encoding="utf-8")
@@ -968,6 +973,7 @@ def test_sandbox_ignores_git_dir(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         assert not Path(cwd).joinpath(".git").exists()
         return AgentResult(
@@ -1319,6 +1325,7 @@ async def test_spawn_agents_parallel_with_model(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"prompt": prompt, "model": model, "agent_index": agent_index})
         return AgentResult(
@@ -1363,6 +1370,7 @@ async def test_spawn_agent_with_reasoning_effort(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"prompt": prompt, "reasoning_effort": reasoning_effort})
         return AgentResult(
@@ -1400,6 +1408,7 @@ async def test_spawn_agent_codex_defaults_model_and_reasoning(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"model": model, "reasoning_effort": reasoning_effort})
         return AgentResult(
@@ -1435,6 +1444,7 @@ async def test_spawn_agents_parallel_codex_defaults_model_and_reasoning(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append(
             {
