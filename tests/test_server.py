@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from subprocess import Popen, TimeoutExpired
 from typing import Any
@@ -416,6 +417,37 @@ async def test_exception_during_communicate(
     assert payload["status"] == "error"
     assert payload["stderr"] == "boom"
     assert payload["returncode"] == -1
+
+
+def test_run_cli_sync_finish_resilient_to_span_error(
+    mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
+) -> None:
+    process = mock_popen.return_value
+    process.communicate.return_value = ("ok", "")
+    process.returncode = 0
+
+    span = MagicMock()
+    span.set_attribute.side_effect = RuntimeError("otel set_attribute failed")
+
+    @contextmanager
+    def broken_trace_span(*_args: Any, **_kwargs: Any) -> Iterator[Any]:
+        yield span
+
+    monkeypatch.setattr(server_module, "trace_span", broken_trace_span)
+
+    adapter = server_module.get_adapter("kimi")
+    result = server_module._run_cli_sync(
+        adapter,
+        prompt="Hello",
+        thinking=False,
+        cwd=".",
+        timeout_seconds=30,
+        agent_index=0,
+    )
+
+    assert result.status == "success"
+    assert result.output == "ok"
+    assert result.returncode == 0
 
 
 @pytest.mark.asyncio

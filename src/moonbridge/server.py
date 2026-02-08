@@ -416,8 +416,11 @@ def _run_cli_sync(
 
         def _finish(result: AgentResult) -> AgentResult:
             if span:
-                span.set_attribute("moonbridge.status", result.status)
-                span.set_attribute("moonbridge.duration_ms", result.duration_ms)
+                try:
+                    span.set_attribute("moonbridge.status", result.status)
+                    span.set_attribute("moonbridge.duration_ms", result.duration_ms)
+                except Exception as exc:
+                    logger.debug("Failed to set span attributes: %s", exc)
             return result
 
         cmd = adapter.build_command(prompt, thinking, model, reasoning_effort)
