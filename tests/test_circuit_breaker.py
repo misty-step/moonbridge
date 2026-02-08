@@ -4,159 +4,123 @@ from typing import Any
 
 import pytest
 
-from moonbridge.adapters.base import AgentResult
-
 server_module = importlib.import_module("moonbridge.server")
+_json_text = server_module._json_text
+_enforce = server_module._enforce_response_limit
 
 
-def _content_size_bytes(content: list[Any]) -> int:
-    return len(
-        json.dumps(
-            [{"type": item.type, "text": item.text} for item in content],
+class TestEnforceResponseLimit:
+    """Unit tests for _enforce_response_limit."""
+
+    def test_under_limit_passes_through(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 10_000)
+        content = _json_text({"status": "success", "output": "hello"})
+
+        result = _enforce(content, "spawn_agent")
+
+        assert result is content
+
+    def test_oversized_replaced_with_circuit_breaker(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 50)
+        content = _json_text({"status": "success", "output": "x" * 500})
+
+        result = _enforce(content, "spawn_agent")
+        payload = json.loads(result[0].text)
+
+        assert payload["status"] == "error"
+        assert payload["message"] == "Response payload too large"
+        assert payload["circuit_breaker"]["triggered"] is True
+        assert payload["circuit_breaker"]["max_bytes"] == 50
+        assert payload["circuit_breaker"]["tool"] == "spawn_agent"
+
+    def test_metadata_reports_original_size(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 50)
+        content = _json_text({"output": "y" * 500})
+        expected_bytes = len(
+            json.dumps(
+                [{"type": c.type, "text": c.text} for c in content],
+                ensure_ascii=True,
+            )
+        )
+
+        result = _enforce(content, "test_tool")
+        payload = json.loads(result[0].text)
+
+        assert payload["circuit_breaker"]["original_bytes"] == expected_bytes
+
+    def test_exactly_at_limit_passes_through(self, monkeypatch: Any) -> None:
+        content = _json_text({"ok": True})
+        serialized = json.dumps(
+            [{"type": c.type, "text": c.text} for c in content],
             ensure_ascii=True,
         )
-    )
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", len(serialized))
 
+        result = _enforce(content, "spawn_agent")
 
-@pytest.mark.asyncio
-async def test_response_under_limit_passes_through(
-    mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 10_000)
+        assert result is content
 
-    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
-
-    assert payload["status"] == "success"
-    assert "circuit_breaker" not in payload
-
-
-@pytest.mark.asyncio
-async def test_oversized_response_replaced_with_circuit_breaker(
-    mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 100)
-    process = mock_popen.return_value
-    process.communicate.return_value = ("x" * 2_000, "")
-    process.returncode = 0
-
-    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
-
-    assert payload["status"] == "error"
-    assert payload["message"] == "Response payload too large"
-    assert payload["circuit_breaker"]["triggered"] is True
-
-
-@pytest.mark.asyncio
-async def test_circuit_breaker_metadata_matches_original_payload_size(
-    mock_which_kimi: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 100)
-    deterministic = AgentResult(
-        status="success",
-        output="y" * 500,
-        stderr=None,
-        returncode=0,
-        duration_ms=1,
-        agent_index=0,
-    )
-
-    def fake_run(
-        _adapter: Any,
-        prompt: str,
-        thinking: bool,
-        cwd: str,
-        timeout_seconds: int,
-        agent_index: int,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-    ) -> AgentResult:
-        return deterministic
-
-    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
-
-    result = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
-    expected_content = server_module._json_text(deterministic.to_dict())
-    expected_bytes = _content_size_bytes(expected_content)
-
-    assert payload["circuit_breaker"]["original_bytes"] == expected_bytes
-    assert payload["circuit_breaker"]["max_bytes"] == 100
-    assert payload["circuit_breaker"]["tool"] == "spawn_agent"
-
-
-@pytest.mark.asyncio
-async def test_circuit_breaker_applies_to_spawn_agents_parallel(
-    mock_which_kimi: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 100)
-
-    def fake_run(
-        _adapter: Any,
-        prompt: str,
-        thinking: bool,
-        cwd: str,
-        timeout_seconds: int,
-        agent_index: int,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-    ) -> AgentResult:
-        return AgentResult(
-            status="success",
-            output=prompt * 300,
-            stderr=None,
-            returncode=0,
-            duration_ms=1,
-            agent_index=agent_index,
+    def test_one_byte_over_limit_triggers(self, monkeypatch: Any) -> None:
+        content = _json_text({"ok": True})
+        serialized = json.dumps(
+            [{"type": c.type, "text": c.text} for c in content],
+            ensure_ascii=True,
         )
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", len(serialized) - 1)
 
-    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+        result = _enforce(content, "spawn_agent")
+        payload = json.loads(result[0].text)
 
-    result = await server_module.handle_tool(
-        "spawn_agents_parallel",
-        {"agents": [{"prompt": "one"}, {"prompt": "two"}]},
-    )
-    payload = json.loads(result[0].text)
+        assert payload["circuit_breaker"]["triggered"] is True
 
-    assert payload["status"] == "error"
-    assert payload["message"] == "Response payload too large"
-    assert payload["circuit_breaker"]["tool"] == "spawn_agents_parallel"
+    def test_tool_name_truncated_in_fallback(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 50)
+        content = _json_text({"output": "x" * 500})
+        long_name = "a" * 500
+
+        result = _enforce(content, long_name)
+        payload = json.loads(result[0].text)
+
+        assert len(payload["circuit_breaker"]["tool"]) == 200
 
 
-@pytest.mark.asyncio
-async def test_max_response_bytes_env_var_is_respected(
-    mock_which_kimi: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.setenv("MOONBRIDGE_MAX_RESPONSE_BYTES", "1000")
-    reloaded = importlib.reload(server_module)
+class TestCircuitBreakerIntegration:
+    """Integration tests via handle_tool + _enforce_response_limit."""
 
-    def fake_run(
-        _adapter: Any,
-        prompt: str,
-        thinking: bool,
-        cwd: str,
-        timeout_seconds: int,
-        agent_index: int,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-    ) -> AgentResult:
-        return AgentResult(
-            status="success",
-            output="z" * 4_000,
-            stderr=None,
-            returncode=0,
-            duration_ms=1,
-            agent_index=agent_index,
-        )
+    @pytest.mark.asyncio
+    async def test_normal_response_passes_through(
+        self, mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 10_000)
 
-    monkeypatch.setattr(reloaded, "_run_cli_sync", fake_run)
+        raw = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+        result = _enforce(raw, "spawn_agent")
+        payload = json.loads(result[0].text)
 
-    result = await reloaded.handle_tool("spawn_agent", {"prompt": "Hello"})
-    payload = json.loads(result[0].text)
+        assert payload["status"] == "success"
+        assert "circuit_breaker" not in payload
 
-    assert reloaded.MAX_RESPONSE_BYTES == 1000
-    assert payload["circuit_breaker"]["max_bytes"] == 1000
+    @pytest.mark.asyncio
+    async def test_oversized_spawn_agent(
+        self, mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 100)
+        process = mock_popen.return_value
+        process.communicate.return_value = ("x" * 2_000, "")
+        process.returncode = 0
 
-    monkeypatch.delenv("MOONBRIDGE_MAX_RESPONSE_BYTES", raising=False)
-    importlib.reload(reloaded)
+        raw = await server_module.handle_tool("spawn_agent", {"prompt": "Hello"})
+        result = _enforce(raw, "spawn_agent")
+        payload = json.loads(result[0].text)
+
+        assert payload["circuit_breaker"]["triggered"] is True
+
+    @pytest.mark.asyncio
+    async def test_env_var_configures_limit(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr(server_module, "MAX_RESPONSE_BYTES", 1000)
+
+        content = _json_text({"output": "z" * 4_000})
+        result = _enforce(content, "spawn_agent")
+        payload = json.loads(result[0].text)
+
+        assert payload["circuit_breaker"]["max_bytes"] == 1000

@@ -579,6 +579,11 @@ def _json_text(payload: Any) -> list[TextContent]:
 
 
 def _enforce_response_limit(content: list[TextContent], tool_name: str) -> list[TextContent]:
+    """Replace oversized MCP responses with a compact error payload.
+
+    Size is measured as ``len()`` on the ``ensure_ascii=True`` JSON string,
+    which equals byte count because every character is ASCII.
+    """
     serialized = json.dumps(
         [{"type": item.type, "text": item.text} for item in content],
         ensure_ascii=True,
@@ -600,7 +605,7 @@ def _enforce_response_limit(content: list[TextContent], tool_name: str) -> list[
                 "triggered": True,
                 "original_bytes": total_bytes,
                 "max_bytes": MAX_RESPONSE_BYTES,
-                "tool": tool_name,
+                "tool": tool_name[:200],
             },
         }
     )
@@ -685,7 +690,6 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         name: MCP tool name (``spawn_agent``, ``spawn_agents_parallel``, etc.).
         arguments: Tool argument payload from the MCP client.
     """
-    result: list[TextContent]
     try:
         cwd = _validate_cwd(None)
         if name == "spawn_agent":
@@ -697,36 +701,35 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
             reasoning_effort = _resolve_reasoning_effort(adapter, arguments.get("reasoning_effort"))
             preflight = _preflight_check(adapter, 0)
             if preflight:
-                result = _json_text(preflight.to_dict())
-            else:
-                loop = asyncio.get_running_loop()
-                try:
-                    agent_result = await loop.run_in_executor(
-                        None,
-                        _run_cli,
-                        adapter,
-                        prompt,
-                        thinking,
-                        cwd,
-                        timeout_seconds,
-                        0,
-                        model,
-                        reasoning_effort,
-                    )
-                    result = _json_text(agent_result.to_dict())
-                except asyncio.CancelledError:
-                    result = _json_text(
-                        AgentResult(
-                            status="cancelled",
-                            output="",
-                            stderr=None,
-                            returncode=-1,
-                            duration_ms=0,
-                            agent_index=0,
-                        ).to_dict()
-                    )
+                return _json_text(preflight.to_dict())
+            loop = asyncio.get_running_loop()
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    _run_cli,
+                    adapter,
+                    prompt,
+                    thinking,
+                    cwd,
+                    timeout_seconds,
+                    0,
+                    model,
+                    reasoning_effort,
+                )
+            except asyncio.CancelledError:
+                return _json_text(
+                    AgentResult(
+                        status="cancelled",
+                        output="",
+                        stderr=None,
+                        returncode=-1,
+                        duration_ms=0,
+                        agent_index=0,
+                    ).to_dict()
+                )
+            return _json_text(result.to_dict())
 
-        elif name == "spawn_agents_parallel":
+        if name == "spawn_agents_parallel":
             agents = list(arguments["agents"])
             if len(agents) > MAX_PARALLEL_AGENTS:
                 raise ValueError(f"Max {MAX_PARALLEL_AGENTS} agents allowed")
@@ -771,35 +774,32 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
                     )
                     for idx in range(len(agents))
                 ]
-                result = _json_text([item.to_dict() for item in cancelled])
-            else:
-                results.extend(task_results)
-                results.sort(key=lambda item: item.agent_index)
-                result = _json_text([item.to_dict() for item in results])
+                return _json_text([item.to_dict() for item in cancelled])
+            results.extend(task_results)
+            results.sort(key=lambda item: item.agent_index)
+            return _json_text([item.to_dict() for item in results])
 
-        elif name == "list_adapters":
+        if name == "list_adapters":
             info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
-            result = _json_text(info)
+            return _json_text(info)
 
-        elif name == "check_status":
+        if name == "check_status":
             adapter = get_adapter()
-            result = _json_text(_status_check(cwd, adapter))
+            return _json_text(_status_check(cwd, adapter))
 
-        else:
-            result = _json_text({"status": "error", "message": f"Unknown tool: {name}"})
+        return _json_text({"status": "error", "message": f"Unknown tool: {name}"})
     except ValueError as exc:
         logger.warning("Validation error: %s", exc)
-        result = _json_text({"status": "error", "message": str(exc)})
+        return _json_text({"status": "error", "message": str(exc)})
     except Exception as exc:
         logger.error("Unhandled error: %s", exc)
-        result = _json_text({"status": "error", "message": str(exc)})
-    return _enforce_response_limit(result, name)
+        return _json_text({"status": "error", "message": str(exc)})
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """MCP tool handler -- delegates to ``handle_tool`` for testability."""
-    return await handle_tool(name, arguments)
+    """MCP tool handler -- delegates to ``handle_tool`` with response limit."""
+    return _enforce_response_limit(await handle_tool(name, arguments), name)
 
 
 async def run() -> None:
