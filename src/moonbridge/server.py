@@ -40,6 +40,9 @@ ALLOWED_DIRS = [
 MAX_PROMPT_LENGTH = 100_000
 _TIMEOUT_TAIL_CHARS = 10_000
 MAX_OUTPUT_CHARS = int(os.environ.get("MOONBRIDGE_MAX_OUTPUT_CHARS", "120000"))
+MAX_RESPONSE_BYTES = int(os.environ.get("MOONBRIDGE_MAX_RESPONSE_BYTES", "5000000"))
+if MAX_RESPONSE_BYTES < 1_000 or MAX_RESPONSE_BYTES > 50_000_000:
+    raise ValueError("MOONBRIDGE_MAX_RESPONSE_BYTES must be between 1000 and 50000000")
 _SANDBOX_ENV = os.environ.get("MOONBRIDGE_SANDBOX", "").strip().lower()
 SANDBOX_MODE = _SANDBOX_ENV in {"1", "true", "yes", "copy"}
 SANDBOX_KEEP = os.environ.get("MOONBRIDGE_SANDBOX_KEEP", "").strip().lower() in {
@@ -575,6 +578,39 @@ def _json_text(payload: Any) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=True))]
 
 
+def _enforce_response_limit(content: list[TextContent], tool_name: str) -> list[TextContent]:
+    """Replace oversized MCP responses with a compact error payload.
+
+    Size is measured as ``len()`` on the ``ensure_ascii=True`` JSON string,
+    which equals byte count because every character is ASCII.
+    """
+    serialized = json.dumps(
+        [{"type": item.type, "text": item.text} for item in content],
+        ensure_ascii=True,
+    )
+    total_bytes = len(serialized)
+    if total_bytes <= MAX_RESPONSE_BYTES:
+        return content
+    logger.warning(
+        "Response payload exceeded limit for %s: %d bytes (max %d)",
+        tool_name,
+        total_bytes,
+        MAX_RESPONSE_BYTES,
+    )
+    return _json_text(
+        {
+            "status": "error",
+            "message": "Response payload too large",
+            "circuit_breaker": {
+                "triggered": True,
+                "original_bytes": total_bytes,
+                "max_bytes": MAX_RESPONSE_BYTES,
+                "tool": tool_name[:200],
+            },
+        }
+    )
+
+
 def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
     config = {
         "strict_mode": STRICT_MODE,
@@ -762,8 +798,8 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """MCP tool handler -- delegates to ``handle_tool`` for testability."""
-    return await handle_tool(name, arguments)
+    """MCP tool handler -- delegates to ``handle_tool`` with response limit."""
+    return _enforce_response_limit(await handle_tool(name, arguments), name)
 
 
 async def run() -> None:
