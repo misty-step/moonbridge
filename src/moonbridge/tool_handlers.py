@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from mcp.types import TextContent  # type: ignore[import-not-found]
+from mcp.types import TextContent
 
 from moonbridge.adapters.base import AgentResult, CLIAdapter
 from moonbridge.telemetry import generate_request_id, trace_span
