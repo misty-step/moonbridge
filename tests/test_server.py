@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from subprocess import Popen, TimeoutExpired
 from typing import Any
@@ -105,6 +106,7 @@ async def test_spawn_agents_parallel_runs_concurrently(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         with lock:
             starts.append(time.monotonic())
@@ -150,6 +152,7 @@ async def test_spawn_agents_parallel_mixed_adapters(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         seen[agent_index] = adapter.config.name
         return AgentResult(
@@ -416,6 +419,37 @@ async def test_exception_during_communicate(
     assert payload["returncode"] == -1
 
 
+def test_run_cli_sync_finish_resilient_to_span_error(
+    mock_popen: Any, mock_which_kimi: Any, monkeypatch: Any
+) -> None:
+    process = mock_popen.return_value
+    process.communicate.return_value = ("ok", "")
+    process.returncode = 0
+
+    span = MagicMock()
+    span.set_attribute.side_effect = RuntimeError("otel set_attribute failed")
+
+    @contextmanager
+    def broken_trace_span(*_args: Any, **_kwargs: Any) -> Iterator[Any]:
+        yield span
+
+    monkeypatch.setattr(server_module, "trace_span", broken_trace_span)
+
+    adapter = server_module.get_adapter("kimi")
+    result = server_module._run_cli_sync(
+        adapter,
+        prompt="Hello",
+        thinking=False,
+        cwd=".",
+        timeout_seconds=30,
+        agent_index=0,
+    )
+
+    assert result.status == "success"
+    assert result.output == "ok"
+    assert result.returncode == 0
+
+
 @pytest.mark.asyncio
 async def test_auth_detection_returns_actionable_message(
     mock_popen: Any, mock_which_kimi: Any
@@ -442,6 +476,7 @@ async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) ->
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         return AgentResult(
             status="success",
@@ -498,6 +533,7 @@ async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         return AgentResult(
             status="success",
@@ -886,6 +922,7 @@ def test_run_cli_sandboxed_diff_and_preserves_host(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         sandbox_cwd = Path(cwd)
         (sandbox_cwd / "edit.txt").write_text("new", encoding="utf-8")
@@ -968,6 +1005,7 @@ def test_sandbox_ignores_git_dir(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         assert not Path(cwd).joinpath(".git").exists()
         return AgentResult(
@@ -1319,6 +1357,7 @@ async def test_spawn_agents_parallel_with_model(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"prompt": prompt, "model": model, "agent_index": agent_index})
         return AgentResult(
@@ -1363,6 +1402,7 @@ async def test_spawn_agent_with_reasoning_effort(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"prompt": prompt, "reasoning_effort": reasoning_effort})
         return AgentResult(
@@ -1400,6 +1440,7 @@ async def test_spawn_agent_codex_defaults_model_and_reasoning(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append({"model": model, "reasoning_effort": reasoning_effort})
         return AgentResult(
@@ -1435,6 +1476,7 @@ async def test_spawn_agents_parallel_codex_defaults_model_and_reasoning(
         agent_index: int,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        request_id: str | None = None,
     ) -> AgentResult:
         calls.append(
             {

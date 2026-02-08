@@ -22,6 +22,7 @@ from mcp.types import TextContent, Tool
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
 from moonbridge.adapters.base import AgentResult
 from moonbridge.signals import extract_quality_signals
+from moonbridge.telemetry import generate_request_id, trace_span
 from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
@@ -349,6 +350,7 @@ def _run_cli_sandboxed(
     agent_index: int,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    request_id: str | None = None,
 ) -> AgentResult:
     from moonbridge.sandbox import run_sandboxed
 
@@ -362,6 +364,7 @@ def _run_cli_sandboxed(
             agent_index,
             model,
             reasoning_effort,
+            request_id,
         )
 
     run_agent.agent_index = agent_index  # type: ignore[attr-defined]
@@ -396,149 +399,199 @@ def _run_cli_sync(
     agent_index: int,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    request_id: str | None = None,
 ) -> AgentResult:
     start = time.monotonic()
-    cmd = adapter.build_command(prompt, thinking, model, reasoning_effort)
-    logger.debug("Spawning agent with prompt: %s...", prompt[:100])
-    try:
-        proc = Popen(
-            cmd,
-            stdout=PIPE,
-            stderr=PIPE,
-            text=True,
-            cwd=cwd,
-            env=_safe_env(adapter),
-            start_new_session=True,
-        )
-    except FileNotFoundError:
-        duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error("%s CLI not found or not executable", adapter.config.name)
-        return AgentResult(
-            status="error",
-            output="",
-            stderr=f"{adapter.config.name} CLI not found or not executable",
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-    except PermissionError as exc:
-        duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error("Permission denied starting process: %s", exc)
-        return AgentResult(
-            status="error",
-            output="",
-            stderr=f"Permission denied: {exc}",
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-    except OSError as exc:
-        duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error("Failed to start process: %s", exc)
-        return AgentResult(
-            status="error",
-            output="",
-            stderr=f"Failed to start process: {exc}",
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-    _track_process(proc)
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout_seconds)
-        duration_ms = int((time.monotonic() - start) * 1000)
-        stderr_value = stderr or None
-        if _auth_error(stderr_value, adapter):
-            logger.info("Agent %s completed with status: auth_error", agent_index)
-            return _apply_output_limit(
+    with trace_span(
+        f"agent/{agent_index}",
+        attributes={
+            "moonbridge.adapter": adapter.config.name,
+            "moonbridge.agent_index": agent_index,
+            "moonbridge.timeout_seconds": timeout_seconds,
+            "moonbridge.prompt_length": len(prompt),
+            "moonbridge.model": model or "",
+            "moonbridge.request_id": request_id or "",
+        },
+    ) as span:
+
+        def _finish(result: AgentResult) -> AgentResult:
+            if span:
+                try:
+                    span.set_attribute("moonbridge.status", result.status)
+                    span.set_attribute("moonbridge.duration_ms", result.duration_ms)
+                except Exception as exc:
+                    logger.debug("Failed to set span attributes: %s", exc)
+            return result
+
+        cmd = adapter.build_command(prompt, thinking, model, reasoning_effort)
+        logger.debug("Spawning agent with prompt: %s...", prompt[:100])
+        try:
+            proc = Popen(
+                cmd,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+                cwd=cwd,
+                env=_safe_env(adapter),
+                start_new_session=True,
+            )
+        except FileNotFoundError:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.error("%s CLI not found or not executable", adapter.config.name)
+            return _finish(
                 AgentResult(
-                    status="auth_error",
-                    output=stdout,
-                    stderr=stderr_value,
-                    returncode=proc.returncode,
+                    status="error",
+                    output="",
+                    stderr=f"{adapter.config.name} CLI not found or not executable",
+                    returncode=-1,
                     duration_ms=duration_ms,
                     agent_index=agent_index,
-                    message=adapter.config.auth_message,
-                ),
-                MAX_OUTPUT_CHARS,
+                    request_id=request_id,
+                )
             )
-        status = "success" if proc.returncode == 0 else "error"
-        logger.info("Agent %s completed with status: %s", agent_index, status)
-        result = AgentResult(
-            status=status,
-            output=stdout,
-            stderr=stderr_value,
-            returncode=proc.returncode,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-        if result.status == "success":
-            signals = extract_quality_signals(result.output, result.stderr)
-            if signals:
-                raw = dict(result.raw or {})
-                raw["quality_signals"] = signals
-                result = replace(result, raw=raw)
-        return _apply_output_limit(result, MAX_OUTPUT_CHARS)
-    except TimeoutExpired:
-        _terminate_process(proc)
-        duration_ms = int((time.monotonic() - start) * 1000)
-        partial_stdout = ""
-        partial_stderr = ""
+        except PermissionError as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.error("Permission denied starting process: %s", exc)
+            return _finish(
+                AgentResult(
+                    status="error",
+                    output="",
+                    stderr=f"Permission denied: {exc}",
+                    returncode=-1,
+                    duration_ms=duration_ms,
+                    agent_index=agent_index,
+                    request_id=request_id,
+                )
+            )
+        except OSError as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.error("Failed to start process: %s", exc)
+            return _finish(
+                AgentResult(
+                    status="error",
+                    output="",
+                    stderr=f"Failed to start process: {exc}",
+                    returncode=-1,
+                    duration_ms=duration_ms,
+                    agent_index=agent_index,
+                    request_id=request_id,
+                )
+            )
+        _track_process(proc)
         try:
-            remaining_out, remaining_err = proc.communicate(timeout=5)
-            partial_stdout = remaining_out or ""
-            partial_stderr = remaining_err or ""
-        except Exception:
-            try:
-                if proc.stdout:
-                    partial_stdout = proc.stdout.read() or ""
-            except Exception:
-                pass
-            try:
-                if proc.stderr:
-                    partial_stderr = proc.stderr.read() or ""
-            except Exception:
-                pass
-        if not isinstance(partial_stdout, str):
-            partial_stdout = str(partial_stdout)
-        if not isinstance(partial_stderr, str):
-            partial_stderr = str(partial_stderr)
-        captured_stdout_len = len(partial_stdout)
-        captured_stderr_len = len(partial_stderr)
-        logger.warning(
-            "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
-            agent_index,
-            timeout_seconds,
-            captured_stdout_len,
-            captured_stderr_len,
-        )
-        return _apply_output_limit(
-            AgentResult(
-                status="timeout",
-                output=partial_stdout,
-                stderr=partial_stderr or None,
-                returncode=-1,
+            stdout, stderr = proc.communicate(timeout=timeout_seconds)
+            duration_ms = int((time.monotonic() - start) * 1000)
+            stderr_value = stderr or None
+            if _auth_error(stderr_value, adapter):
+                logger.info(
+                    "Agent %s completed with status: auth_error",
+                    agent_index,
+                    extra={"request_id": request_id, "adapter": adapter.config.name},
+                )
+                return _finish(
+                    _apply_output_limit(
+                        AgentResult(
+                            status="auth_error",
+                            output=stdout,
+                            stderr=stderr_value,
+                            returncode=proc.returncode,
+                            duration_ms=duration_ms,
+                            agent_index=agent_index,
+                            message=adapter.config.auth_message,
+                            request_id=request_id,
+                        ),
+                        MAX_OUTPUT_CHARS,
+                    )
+                )
+            status = "success" if proc.returncode == 0 else "error"
+            logger.info(
+                "Agent %s completed with status: %s",
+                agent_index,
+                status,
+                extra={"request_id": request_id, "adapter": adapter.config.name},
+            )
+            result = AgentResult(
+                status=status,
+                output=stdout,
+                stderr=stderr_value,
+                returncode=proc.returncode,
                 duration_ms=duration_ms,
                 agent_index=agent_index,
-                message=f"Agent timed out after {timeout_seconds}s",
-            ),
-            _TIMEOUT_TAIL_CHARS,
-            tail_only=True,
-        )
-    except Exception as exc:
-        _terminate_process(proc)
-        duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error("Agent %s failed with error: %s", agent_index, exc)
-        return AgentResult(
-            status="error",
-            output="",
-            stderr=str(exc),
-            returncode=-1,
-            duration_ms=duration_ms,
-            agent_index=agent_index,
-        )
-    finally:
-        _untrack_process(proc)
+                request_id=request_id,
+            )
+            if result.status == "success":
+                signals = extract_quality_signals(result.output, result.stderr)
+                if signals:
+                    raw = dict(result.raw or {})
+                    raw["quality_signals"] = signals
+                    result = replace(result, raw=raw)
+            return _finish(_apply_output_limit(result, MAX_OUTPUT_CHARS))
+        except TimeoutExpired:
+            _terminate_process(proc)
+            duration_ms = int((time.monotonic() - start) * 1000)
+            partial_stdout = ""
+            partial_stderr = ""
+            try:
+                remaining_out, remaining_err = proc.communicate(timeout=5)
+                partial_stdout = remaining_out or ""
+                partial_stderr = remaining_err or ""
+            except Exception:
+                try:
+                    if proc.stdout:
+                        partial_stdout = proc.stdout.read() or ""
+                except Exception:
+                    pass
+                try:
+                    if proc.stderr:
+                        partial_stderr = proc.stderr.read() or ""
+                except Exception:
+                    pass
+            if not isinstance(partial_stdout, str):
+                partial_stdout = str(partial_stdout)
+            if not isinstance(partial_stderr, str):
+                partial_stderr = str(partial_stderr)
+            captured_stdout_len = len(partial_stdout)
+            captured_stderr_len = len(partial_stderr)
+            logger.warning(
+                "Agent %s timed out after %ss (captured %d chars stdout, %d chars stderr)",
+                agent_index,
+                timeout_seconds,
+                captured_stdout_len,
+                captured_stderr_len,
+            )
+            return _finish(
+                _apply_output_limit(
+                    AgentResult(
+                        status="timeout",
+                        output=partial_stdout,
+                        stderr=partial_stderr or None,
+                        returncode=-1,
+                        duration_ms=duration_ms,
+                        agent_index=agent_index,
+                        message=f"Agent timed out after {timeout_seconds}s",
+                        request_id=request_id,
+                    ),
+                    _TIMEOUT_TAIL_CHARS,
+                    tail_only=True,
+                )
+            )
+        except Exception as exc:
+            _terminate_process(proc)
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.error("Agent %s failed with error: %s", agent_index, exc)
+            return _finish(
+                AgentResult(
+                    status="error",
+                    output="",
+                    stderr=str(exc),
+                    returncode=-1,
+                    duration_ms=duration_ms,
+                    agent_index=agent_index,
+                    request_id=request_id,
+                )
+            )
+        finally:
+            _untrack_process(proc)
 
 
 def _run_cli(
@@ -550,6 +603,7 @@ def _run_cli(
     agent_index: int,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    request_id: str | None = None,
 ) -> AgentResult:
     if SANDBOX_MODE:
         return _run_cli_sandboxed(
@@ -561,6 +615,7 @@ def _run_cli(
             agent_index,
             model,
             reasoning_effort,
+            request_id,
         )
     return _run_cli_sync(
         adapter,
@@ -571,6 +626,7 @@ def _run_cli(
         agent_index,
         model,
         reasoning_effort,
+        request_id,
     )
 
 
@@ -690,104 +746,120 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         name: MCP tool name (``spawn_agent``, ``spawn_agents_parallel``, etc.).
         arguments: Tool argument payload from the MCP client.
     """
+    request_id = generate_request_id()
     try:
-        cwd = _validate_cwd(None)
-        if name == "spawn_agent":
-            adapter = get_adapter(arguments.get("adapter"))
-            prompt = _validate_prompt(arguments["prompt"])
-            thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
-            timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
-            model = _resolve_model(adapter, arguments.get("model"))
-            reasoning_effort = _resolve_reasoning_effort(adapter, arguments.get("reasoning_effort"))
-            preflight = _preflight_check(adapter, 0)
-            if preflight:
-                return _json_text(preflight.to_dict())
-            loop = asyncio.get_running_loop()
-            try:
-                result = await loop.run_in_executor(
-                    None,
-                    _run_cli,
-                    adapter,
-                    prompt,
-                    thinking,
-                    cwd,
-                    timeout_seconds,
-                    0,
-                    model,
-                    reasoning_effort,
+        with trace_span(
+            f"handle_tool/{name}",
+            attributes={
+                "moonbridge.tool": name,
+                "moonbridge.request_id": request_id,
+            },
+        ):
+            cwd = _validate_cwd(None)
+            if name == "spawn_agent":
+                adapter = get_adapter(arguments.get("adapter"))
+                prompt = _validate_prompt(arguments["prompt"])
+                thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
+                timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
+                model = _resolve_model(adapter, arguments.get("model"))
+                reasoning_effort = _resolve_reasoning_effort(
+                    adapter, arguments.get("reasoning_effort")
                 )
-            except asyncio.CancelledError:
-                return _json_text(
-                    AgentResult(
-                        status="cancelled",
-                        output="",
-                        stderr=None,
-                        returncode=-1,
-                        duration_ms=0,
-                        agent_index=0,
-                    ).to_dict()
-                )
-            return _json_text(result.to_dict())
-
-        if name == "spawn_agents_parallel":
-            agents = list(arguments["agents"])
-            if len(agents) > MAX_PARALLEL_AGENTS:
-                raise ValueError(f"Max {MAX_PARALLEL_AGENTS} agents allowed")
-            loop = asyncio.get_running_loop()
-            tasks = []
-            results: list[AgentResult] = []
-            for idx, spec in enumerate(agents):
-                adapter = get_adapter(spec.get("adapter"))
-                prompt = _validate_prompt(spec["prompt"])
-                thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
-                model = _resolve_model(adapter, spec.get("model"))
-                reasoning_effort = _resolve_reasoning_effort(adapter, spec.get("reasoning_effort"))
-                preflight = _preflight_check(adapter, idx)
+                preflight = _preflight_check(adapter, 0)
                 if preflight:
-                    results.append(preflight)
-                    continue
-                tasks.append(
-                    loop.run_in_executor(
+                    return _json_text(replace(preflight, request_id=request_id).to_dict())
+                loop = asyncio.get_running_loop()
+                try:
+                    result = await loop.run_in_executor(
                         None,
                         _run_cli,
                         adapter,
                         prompt,
                         thinking,
                         cwd,
-                        _resolve_timeout(adapter, spec.get("timeout_seconds")),
-                        idx,
+                        timeout_seconds,
+                        0,
                         model,
                         reasoning_effort,
+                        request_id,
                     )
-                )
-            try:
-                task_results = await asyncio.gather(*tasks) if tasks else []
-            except asyncio.CancelledError:
-                cancelled = [
-                    AgentResult(
-                        status="cancelled",
-                        output="",
-                        stderr=None,
-                        returncode=-1,
-                        duration_ms=0,
-                        agent_index=idx,
+                except asyncio.CancelledError:
+                    return _json_text(
+                        AgentResult(
+                            status="cancelled",
+                            output="",
+                            stderr=None,
+                            returncode=-1,
+                            duration_ms=0,
+                            agent_index=0,
+                            request_id=request_id,
+                        ).to_dict()
                     )
-                    for idx in range(len(agents))
-                ]
-                return _json_text([item.to_dict() for item in cancelled])
-            results.extend(task_results)
-            results.sort(key=lambda item: item.agent_index)
-            return _json_text([item.to_dict() for item in results])
+                return _json_text(result.to_dict())
 
-        if name == "list_adapters":
-            info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
-            return _json_text(info)
+            if name == "spawn_agents_parallel":
+                agents = list(arguments["agents"])
+                if len(agents) > MAX_PARALLEL_AGENTS:
+                    raise ValueError(f"Max {MAX_PARALLEL_AGENTS} agents allowed")
+                loop = asyncio.get_running_loop()
+                tasks = []
+                results: list[AgentResult] = []
+                for idx, spec in enumerate(agents):
+                    adapter = get_adapter(spec.get("adapter"))
+                    prompt = _validate_prompt(spec["prompt"])
+                    thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
+                    model = _resolve_model(adapter, spec.get("model"))
+                    reasoning_effort = _resolve_reasoning_effort(
+                        adapter, spec.get("reasoning_effort")
+                    )
+                    preflight = _preflight_check(adapter, idx)
+                    if preflight:
+                        results.append(replace(preflight, request_id=request_id))
+                        continue
+                    tasks.append(
+                        loop.run_in_executor(
+                            None,
+                            _run_cli,
+                            adapter,
+                            prompt,
+                            thinking,
+                            cwd,
+                            _resolve_timeout(adapter, spec.get("timeout_seconds")),
+                            idx,
+                            model,
+                            reasoning_effort,
+                            request_id,
+                        )
+                    )
+                try:
+                    task_results = await asyncio.gather(*tasks) if tasks else []
+                except asyncio.CancelledError:
+                    cancelled = [
+                        AgentResult(
+                            status="cancelled",
+                            output="",
+                            stderr=None,
+                            returncode=-1,
+                            duration_ms=0,
+                            agent_index=idx,
+                            request_id=request_id,
+                        )
+                        for idx in range(len(agents))
+                    ]
+                    return _json_text([item.to_dict() for item in cancelled])
+                results.extend(task_results)
+                results.sort(key=lambda item: item.agent_index)
+                return _json_text([item.to_dict() for item in results])
 
-        if name == "check_status":
-            adapter = get_adapter()
-            return _json_text(_status_check(cwd, adapter))
+            if name == "list_adapters":
+                info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
+                return _json_text(info)
 
-        return _json_text({"status": "error", "message": f"Unknown tool: {name}"})
+            if name == "check_status":
+                adapter = get_adapter()
+                return _json_text(_status_check(cwd, adapter))
+
+            return _json_text({"status": "error", "message": f"Unknown tool: {name}"})
     except ValueError as exc:
         logger.warning("Validation error: %s", exc)
         return _json_text({"status": "error", "message": str(exc)})

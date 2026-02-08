@@ -31,6 +31,7 @@ class AgentResult:
     duration_ms: int
     agent_index: int
     message: str | None = None
+    request_id: str | None = None
     raw: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,6 +45,8 @@ class AgentResult:
         }
         if self.message is not None:
             payload["message"] = self.message
+        if self.request_id is not None:
+            payload["request_id"] = self.request_id
         if self.raw is not None:
             payload["raw"] = self.raw
         return payload
