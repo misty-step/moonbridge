@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.13.0...moonbridge-v0.14.0) (2026-02-08)
+
+
+### Features
+
+* structured observability with OpenTelemetry tracing ([#96](https://github.com/misty-step/moonbridge/issues/96)) ([08713a0](https://github.com/misty-step/moonbridge/commit/08713a061bafb68e2018d23075147679993260ff))
+
 ## [0.13.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.12.1...moonbridge-v0.13.0) (2026-02-08)
 
 
