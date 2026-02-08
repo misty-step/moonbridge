@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import json
 import logging
 import os
 import signal
@@ -19,10 +18,11 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from moonbridge import tool_handlers
 from moonbridge.adapters import ADAPTER_REGISTRY, CLIAdapter, get_adapter
 from moonbridge.adapters.base import AgentResult
 from moonbridge.signals import extract_quality_signals
-from moonbridge.telemetry import generate_request_id, trace_span
+from moonbridge.telemetry import trace_span
 from moonbridge.tools import build_tools
 
 server = Server("moonbridge")
@@ -631,39 +631,17 @@ def _run_cli(
 
 
 def _json_text(payload: Any) -> list[TextContent]:
-    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=True))]
+    """Serialize payload for MCP text transport."""
+    return tool_handlers.json_text(payload)
 
 
 def _enforce_response_limit(content: list[TextContent], tool_name: str) -> list[TextContent]:
-    """Replace oversized MCP responses with a compact error payload.
-
-    Size is measured as ``len()`` on the ``ensure_ascii=True`` JSON string,
-    which equals byte count because every character is ASCII.
-    """
-    serialized = json.dumps(
-        [{"type": item.type, "text": item.text} for item in content],
-        ensure_ascii=True,
-    )
-    total_bytes = len(serialized)
-    if total_bytes <= MAX_RESPONSE_BYTES:
-        return content
-    logger.warning(
-        "Response payload exceeded limit for %s: %d bytes (max %d)",
+    """Apply circuit-breaker behavior for oversized protocol responses."""
+    return tool_handlers.enforce_response_limit(
+        content,
         tool_name,
-        total_bytes,
-        MAX_RESPONSE_BYTES,
-    )
-    return _json_text(
-        {
-            "status": "error",
-            "message": "Response payload too large",
-            "circuit_breaker": {
-                "triggered": True,
-                "original_bytes": total_bytes,
-                "max_bytes": MAX_RESPONSE_BYTES,
-                "tool": tool_name[:200],
-            },
-        }
+        max_response_bytes=MAX_RESPONSE_BYTES,
+        logger=logger,
     )
 
 
@@ -736,6 +714,25 @@ async def list_tools() -> list[Tool]:
     )
 
 
+def _build_tool_handler_deps() -> tool_handlers.ToolHandlerDeps:
+    """Collect orchestration callbacks for protocol-layer dispatch."""
+    return tool_handlers.ToolHandlerDeps(
+        max_parallel_agents=MAX_PARALLEL_AGENTS,
+        adapter_registry=ADAPTER_REGISTRY,
+        validate_cwd=_validate_cwd,
+        get_adapter=get_adapter,
+        validate_prompt=_validate_prompt,
+        validate_thinking=_validate_thinking,
+        resolve_timeout=_resolve_timeout,
+        resolve_model=_resolve_model,
+        resolve_reasoning_effort=_resolve_reasoning_effort,
+        preflight_check=_preflight_check,
+        run_cli=_run_cli,
+        adapter_info=_adapter_info,
+        status_check=_status_check,
+    )
+
+
 async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Dispatch a tool invocation with validation and stable error payloads.
 
@@ -746,126 +743,12 @@ async def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]
         name: MCP tool name (``spawn_agent``, ``spawn_agents_parallel``, etc.).
         arguments: Tool argument payload from the MCP client.
     """
-    request_id = generate_request_id()
-    try:
-        with trace_span(
-            f"handle_tool/{name}",
-            attributes={
-                "moonbridge.tool": name,
-                "moonbridge.request_id": request_id,
-            },
-        ):
-            cwd = _validate_cwd(None)
-            if name == "spawn_agent":
-                adapter = get_adapter(arguments.get("adapter"))
-                prompt = _validate_prompt(arguments["prompt"])
-                thinking = _validate_thinking(adapter, bool(arguments.get("thinking", False)))
-                timeout_seconds = _resolve_timeout(adapter, arguments.get("timeout_seconds"))
-                model = _resolve_model(adapter, arguments.get("model"))
-                reasoning_effort = _resolve_reasoning_effort(
-                    adapter, arguments.get("reasoning_effort")
-                )
-                preflight = _preflight_check(adapter, 0)
-                if preflight:
-                    return _json_text(replace(preflight, request_id=request_id).to_dict())
-                loop = asyncio.get_running_loop()
-                try:
-                    result = await loop.run_in_executor(
-                        None,
-                        _run_cli,
-                        adapter,
-                        prompt,
-                        thinking,
-                        cwd,
-                        timeout_seconds,
-                        0,
-                        model,
-                        reasoning_effort,
-                        request_id,
-                    )
-                except asyncio.CancelledError:
-                    return _json_text(
-                        AgentResult(
-                            status="cancelled",
-                            output="",
-                            stderr=None,
-                            returncode=-1,
-                            duration_ms=0,
-                            agent_index=0,
-                            request_id=request_id,
-                        ).to_dict()
-                    )
-                return _json_text(result.to_dict())
-
-            if name == "spawn_agents_parallel":
-                agents = list(arguments["agents"])
-                if len(agents) > MAX_PARALLEL_AGENTS:
-                    raise ValueError(f"Max {MAX_PARALLEL_AGENTS} agents allowed")
-                loop = asyncio.get_running_loop()
-                tasks = []
-                results: list[AgentResult] = []
-                for idx, spec in enumerate(agents):
-                    adapter = get_adapter(spec.get("adapter"))
-                    prompt = _validate_prompt(spec["prompt"])
-                    thinking = _validate_thinking(adapter, bool(spec.get("thinking", False)))
-                    model = _resolve_model(adapter, spec.get("model"))
-                    reasoning_effort = _resolve_reasoning_effort(
-                        adapter, spec.get("reasoning_effort")
-                    )
-                    preflight = _preflight_check(adapter, idx)
-                    if preflight:
-                        results.append(replace(preflight, request_id=request_id))
-                        continue
-                    tasks.append(
-                        loop.run_in_executor(
-                            None,
-                            _run_cli,
-                            adapter,
-                            prompt,
-                            thinking,
-                            cwd,
-                            _resolve_timeout(adapter, spec.get("timeout_seconds")),
-                            idx,
-                            model,
-                            reasoning_effort,
-                            request_id,
-                        )
-                    )
-                try:
-                    task_results = await asyncio.gather(*tasks) if tasks else []
-                except asyncio.CancelledError:
-                    cancelled = [
-                        AgentResult(
-                            status="cancelled",
-                            output="",
-                            stderr=None,
-                            returncode=-1,
-                            duration_ms=0,
-                            agent_index=idx,
-                            request_id=request_id,
-                        )
-                        for idx in range(len(agents))
-                    ]
-                    return _json_text([item.to_dict() for item in cancelled])
-                results.extend(task_results)
-                results.sort(key=lambda item: item.agent_index)
-                return _json_text([item.to_dict() for item in results])
-
-            if name == "list_adapters":
-                info = [_adapter_info(cwd, adapter) for adapter in ADAPTER_REGISTRY.values()]
-                return _json_text(info)
-
-            if name == "check_status":
-                adapter = get_adapter()
-                return _json_text(_status_check(cwd, adapter))
-
-            return _json_text({"status": "error", "message": f"Unknown tool: {name}"})
-    except ValueError as exc:
-        logger.warning("Validation error: %s", exc)
-        return _json_text({"status": "error", "message": str(exc)})
-    except Exception as exc:
-        logger.error("Unhandled error: %s", exc)
-        return _json_text({"status": "error", "message": str(exc)})
+    return await tool_handlers.handle_tool(
+        name,
+        arguments,
+        deps=_build_tool_handler_deps(),
+        logger=logger,
+    )
 
 
 @server.call_tool()
