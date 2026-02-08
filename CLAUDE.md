@@ -32,7 +32,8 @@ uv build                     # Build package
 
 ```
 src/moonbridge/
-├── server.py          # MCP server implementation, tool handlers, process management
+├── server.py          # MCP server entrypoint and orchestration helper wiring
+├── tool_handlers.py   # MCP protocol-layer dispatch and response serialization
 ├── sandbox.py         # Copy-on-run sandbox + diff utilities
 ├── version_check.py   # Update notification (24h cache)
 └── adapters/
@@ -43,6 +44,8 @@ src/moonbridge/
 ```
 
 **Adapter pattern**: The codebase uses a protocol-based adapter pattern to support multiple CLI backends. `CLIAdapter` defines the interface; each adapter implements `build_command()` and `check_installed()`. Currently Kimi and Codex are implemented.
+
+**Protocol boundary**: `tool_handlers.py` owns MCP protocol dispatch (`spawn_agent`, `spawn_agents_parallel`, status/list calls) and stable response payload shaping. `server.py` provides orchestration callbacks (validation, adapter resolution, process execution).
 
 **Process lifecycle**: Agents spawn as subprocess with `start_new_session=True` for clean process group management. Orphan cleanup is registered via `atexit`. Processes are tracked via weak references in `_active_processes`.
 
