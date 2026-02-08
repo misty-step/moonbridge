@@ -32,6 +32,17 @@ uvx moonbridge
 
 3. **Use it.** Your MCP client now has `spawn_agent` and `spawn_agents_parallel` tools.
 
+## Security Warning (Read First)
+
+Moonbridge executes agentic CLIs (Kimi/Codex). A malicious or careless prompt can cause an
+agent to run shell commands, read accessible files, or exfiltrate data via network calls.
+
+Moonbridge adds guardrails (`MOONBRIDGE_ALLOWED_DIRS`, environment allowlists, optional
+`MOONBRIDGE_SANDBOX=1`), but these are not equivalent to OS-level containment.
+
+For untrusted prompts or shared environments, run Moonbridge inside a container or VM with
+least-privilege filesystem and network access.
+
 ## Updating
 
 Moonbridge checks for updates on startup (cached for 24h). To update manually:
@@ -173,7 +184,21 @@ with original sizes.
 
 ## Security
 
-### 1. Directory Restrictions (`MOONBRIDGE_ALLOWED_DIRS`)
+Moonbridge inherits the security model of the selected adapter CLI. Kimi and Codex are
+agentic CLIs; prompts can trigger command execution, file access, and network activity
+within the process permissions.
+
+### 1. Threat Model (Prompt Injection Included)
+
+If an attacker can influence prompt input sent through MCP, they can attempt to make the
+agent:
+- read sensitive files (for example `~/.ssh` or `.env`),
+- run destructive shell commands,
+- exfiltrate data over the network.
+
+Moonbridge does not inspect prompt intent. Treat prompt input as potentially untrusted.
+
+### 2. Directory Restrictions (`MOONBRIDGE_ALLOWED_DIRS`)
 
 Default: agents can operate in any directory. Set `MOONBRIDGE_ALLOWED_DIRS` to restrict: colon-separated allowed paths. Symlinks resolved via `os.path.realpath` before checking. Strict mode (`MOONBRIDGE_STRICT=1`) exits on startup if no valid allowed directories are configured.
 
@@ -182,19 +207,27 @@ export MOONBRIDGE_ALLOWED_DIRS="/home/user/projects:/home/user/work"
 export MOONBRIDGE_STRICT=1  # require restrictions
 ```
 
-### 2. Environment Sanitization
+### 3. Environment Sanitization
 
 Only whitelisted env vars are passed to spawned agents. Each adapter defines its own allowlist (`PATH`, `HOME`, plus adapter-specific like `OPENAI_API_KEY` for Codex). Your shell environment (secrets, tokens, SSH keys) is not inherited by default.
 
-### 3. Input Validation
+### 4. Input Validation
 
 Model parameters are validated to prevent flag injection (values starting with `-` are rejected). Prompts are capped at 100,000 characters and cannot be empty.
 
-### 4. Process Isolation
+### 5. Process Isolation and Sandbox Mode
 
 Agents run in separate process groups (`start_new_session=True`). Orphan cleanup on exit. Sandbox mode available (`MOONBRIDGE_SANDBOX=1`) for copy-on-run isolation.
 
-> **Not OS-level sandboxing.** Agents can still read arbitrary host files. For strong isolation, use containers/VMs.
+> **Not OS-level sandboxing.** Agents can still read or write arbitrary host files they can access.
+
+### 6. Hardened Deployment Checklist
+
+- Set `MOONBRIDGE_ALLOWED_DIRS` to the smallest possible set.
+- Enable `MOONBRIDGE_STRICT=1` so missing restrictions fail closed.
+- Enable `MOONBRIDGE_SANDBOX=1` to avoid direct workspace mutation.
+- Run Moonbridge in a container/VM for strong isolation.
+- Do not expose Moonbridge to untrusted clients without additional auth controls.
 
 ## Troubleshooting
 
