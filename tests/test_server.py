@@ -62,6 +62,30 @@ async def test_spawn_agent_per_call_adapter_selection(
 
 
 @pytest.mark.asyncio
+async def test_spawn_agent_calls_opencode_cli_with_default_model(
+    mock_popen: Any, mock_which_opencode: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_OPENCODE_MODEL", raising=False)
+
+    result = await server_module.handle_tool(
+        "spawn_agent", {"prompt": "Hello", "adapter": "opencode"}
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    args, _kwargs = mock_popen.call_args
+    assert args[0] == [
+        "opencode",
+        "run",
+        "-m",
+        "openrouter/minimax/minimax-m2.5",
+        "--",
+        "Hello",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_spawn_agent_thinking_adds_flag(
     mock_popen: Any, mock_which_kimi: Any
 ) -> None:
@@ -570,8 +594,8 @@ async def test_tool_schema_includes_adapter_enum() -> None:
         "adapter"
     ]["enum"]
 
-    assert set(spawn_enum) == {"kimi", "codex"}
-    assert set(parallel_enum) == {"kimi", "codex"}
+    assert set(spawn_enum) == {"kimi", "codex", "opencode"}
+    assert set(parallel_enum) == {"kimi", "codex", "opencode"}
 
 
 @pytest.mark.asyncio
@@ -1292,6 +1316,18 @@ def test_resolve_model_codex_default_when_no_config(monkeypatch: Any) -> None:
     result = server_module._resolve_model(adapter, None)
 
     assert result == "gpt-5.3-codex"
+
+
+def test_resolve_model_opencode_default_when_no_config(monkeypatch: Any) -> None:
+    from moonbridge.adapters.opencode import OpencodeAdapter
+
+    adapter = OpencodeAdapter()
+    monkeypatch.delenv("MOONBRIDGE_OPENCODE_MODEL", raising=False)
+    monkeypatch.delenv("MOONBRIDGE_MODEL", raising=False)
+
+    result = server_module._resolve_model(adapter, None)
+
+    assert result == "openrouter/minimax/minimax-m2.5"
 
 
 @pytest.mark.asyncio

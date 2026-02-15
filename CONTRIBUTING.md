@@ -3,7 +3,7 @@
 ## Development Setup
 - Python 3.11+
 - Dependency manager: `uv`
-- Install: `uv sync --dev`
+- Install: `uv sync --extra dev`
 - Build backend: hatchling (see `pyproject.toml`)
 
 ## Running Tests

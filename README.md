@@ -16,6 +16,7 @@ uvx moonbridge
    |---------|---------|--------------|
    | Kimi (default) | `uv tool install --python 3.13 kimi-cli` | `kimi login` |
    | Codex | `npm install -g @openai/codex` | Set `OPENAI_API_KEY` |
+   | OpenCode | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` |
 
 2. **Add to MCP config** (`~/.mcp.json`):
    ```json
@@ -128,8 +129,8 @@ Three approaches. One request. You choose the winner.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `prompt` | string | Yes | Task description for the agent |
-| `adapter` | string | No | Backend to use: `kimi`, `codex` (default: `kimi`) |
-| `model` | string | No | Model override (e.g., `gpt-5.2-codex`). For `codex`, default is `gpt-5.3-codex`. |
+| `adapter` | string | No | Backend to use: `kimi`, `codex`, `opencode` (default: `kimi`) |
+| `model` | string | No | Model override (e.g., `gpt-5.2-codex`, `openrouter/minimax/minimax-m2.5`). For `codex`, default is `gpt-5.3-codex`. For `opencode`, models use `provider/model`. |
 | `thinking` | boolean | No | Enable reasoning mode (Kimi only) |
 | `reasoning_effort` | string | No | Reasoning budget: `low`, `medium`, `high`, `xhigh` (Codex only, default `xhigh`) |
 | `timeout_seconds` | integer | No | Override default timeout (30-3600) |
@@ -141,7 +142,7 @@ Three approaches. One request. You choose the winner.
 | `agents` | array | Yes | List of agent configs (max 10) |
 | `agents[].prompt` | string | Yes | Task for this agent |
 | `agents[].adapter` | string | No | Backend for this agent |
-| `agents[].model` | string | No | Model override for this agent (`codex` default: `gpt-5.3-codex`) |
+| `agents[].model` | string | No | Model override for this agent (`codex` default: `gpt-5.3-codex`; `opencode` uses `provider/model`) |
 | `agents[].thinking` | boolean | No | Enable reasoning (Kimi only) |
 | `agents[].reasoning_effort` | string | No | Reasoning budget (Codex only, default `xhigh`) |
 | `agents[].timeout_seconds` | integer | No | Timeout for this agent |
@@ -243,6 +244,10 @@ which kimi
 # Codex
 npm install -g @openai/codex
 which codex
+
+# OpenCode
+curl -fsSL https://opencode.ai/install | bash
+which opencode
 ```
 
 ### "auth_error" responses
@@ -255,6 +260,9 @@ kimi login
 
 # Codex
 export OPENAI_API_KEY=sk-...
+
+# OpenCode
+opencode auth login
 ```
 
 ### Timeout errors
@@ -272,6 +280,7 @@ Or set per-adapter defaults via environment:
 ```bash
 export MOONBRIDGE_CODEX_TIMEOUT=2400  # 40 minutes
 export MOONBRIDGE_KIMI_TIMEOUT=900    # 15 minutes
+export MOONBRIDGE_OPENCODE_TIMEOUT=1200  # 20 minutes
 ```
 
 ## Timeout Best Practices

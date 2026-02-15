@@ -11,7 +11,7 @@ An MCP server that spawns AI coding agents from any MCP client. Supports multipl
 ```bash
 # Development
 uv sync                      # Install dependencies
-uv sync --dev                # Install with dev dependencies
+uv sync --extra dev          # Install with dev dependencies
 
 # Quality gates
 ruff check src/              # Lint
