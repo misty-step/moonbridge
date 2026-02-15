@@ -104,3 +104,17 @@ def mock_which_codex(mocker):
 def mock_which_no_codex(mocker):
     """Mock shutil.which to NOT find codex."""
     return mocker.patch("moonbridge.adapters.codex.shutil.which", return_value=None)
+
+
+@pytest.fixture
+def mock_which_opencode(mocker):
+    """Mock shutil.which to find opencode."""
+    return mocker.patch(
+        "moonbridge.adapters.opencode.shutil.which", return_value="/usr/local/bin/opencode"
+    )
+
+
+@pytest.fixture
+def mock_which_no_opencode(mocker):
+    """Mock shutil.which to NOT find opencode."""
+    return mocker.patch("moonbridge.adapters.opencode.shutil.which", return_value=None)

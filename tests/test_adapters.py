@@ -4,6 +4,7 @@ from moonbridge.adapters import CLIAdapter, get_adapter, list_adapters
 from moonbridge.adapters.base import AgentResult
 from moonbridge.adapters.codex import CodexAdapter
 from moonbridge.adapters.kimi import KimiAdapter
+from moonbridge.adapters.opencode import OpencodeAdapter
 
 # AgentResult tests
 
@@ -306,6 +307,66 @@ def test_list_adapters_includes_codex():
     adapters = list_adapters()
     assert "codex" in adapters
     assert "kimi" in adapters
+
+
+# OpenCode adapter tests
+
+
+def test_opencode_adapter_build_command_basic():
+    adapter = OpencodeAdapter()
+    cmd = adapter.build_command("hello world", thinking=False)
+    assert cmd == ["opencode", "run", "--", "hello world"]
+
+
+def test_opencode_adapter_build_command_with_model():
+    adapter = OpencodeAdapter()
+    cmd = adapter.build_command(
+        "hello world",
+        thinking=False,
+        model="openrouter/minimax/minimax-m2.5",
+    )
+    assert cmd == [
+        "opencode",
+        "run",
+        "-m",
+        "openrouter/minimax/minimax-m2.5",
+        "--",
+        "hello world",
+    ]
+
+
+def test_opencode_adapter_check_installed(mocker):
+    mocker.patch(
+        "moonbridge.adapters.opencode.shutil.which", return_value="/usr/local/bin/opencode"
+    )
+    adapter = OpencodeAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is True
+    assert path == "/usr/local/bin/opencode"
+
+
+def test_opencode_adapter_check_not_installed(mocker):
+    mocker.patch("moonbridge.adapters.opencode.shutil.which", return_value=None)
+    adapter = OpencodeAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is False
+    assert path is None
+
+
+def test_opencode_adapter_config_values():
+    adapter = OpencodeAdapter()
+    assert adapter.config.name == "opencode"
+    assert adapter.config.cli_command == "opencode"
+    assert adapter.config.supports_thinking is False
+    assert adapter.config.default_model == "openrouter/minimax/minimax-m2.5"
+    assert "OPENROUTER_API_KEY" in adapter.config.safe_env_keys
+    assert "OpenCode" in adapter.config.tool_description
+
+
+def test_opencode_adapter_rejects_model_starting_with_dash():
+    adapter = OpencodeAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="--help")
 
 
 # Model validation tests (flag injection prevention)
