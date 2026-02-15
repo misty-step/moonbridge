@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   review:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     name: "${{ matrix.reviewer }}"
     runs-on: ubuntu-latest
     strategy:
@@ -29,18 +30,19 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@v1
+      - uses: misty-step/cerberus@bd596a2ebc2bb5fa6cfaa79c4f128fa22b847532 # v1
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          kimi-api-key: ${{ secrets.MOONSHOT_API_KEY }}
+          # Must be OpenRouter key (legacy alias: MOONSHOT_API_KEY).
+          api-key: ${{ secrets.CERBERUS_API_KEY || secrets.OPENROUTER_API_KEY || secrets.MOONSHOT_API_KEY }}
 
   verdict:
     name: "Council Verdict"
     needs: review
-    if: always()
+    if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@v1
+      - uses: misty-step/cerberus/verdict@bd596a2ebc2bb5fa6cfaa79c4f128fa22b847532 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
