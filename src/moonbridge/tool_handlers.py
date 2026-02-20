@@ -211,11 +211,17 @@ async def handle_tool(
                 provider = provider_raw.strip() if isinstance(provider_raw, str) else None
                 provider = provider or None
                 refresh = bool(arguments.get("refresh", False))
-                return json_text(deps.model_catalog(cwd, adapter, provider, refresh))
+                loop = asyncio.get_running_loop()
+                catalog = await loop.run_in_executor(
+                    None, deps.model_catalog, cwd, adapter, provider, refresh
+                )
+                return json_text(catalog)
 
             if name == "check_status":
                 adapter = deps.get_adapter(arguments.get("adapter"))
-                return json_text(deps.status_check(cwd, adapter))
+                loop = asyncio.get_running_loop()
+                status = await loop.run_in_executor(None, deps.status_check, cwd, adapter)
+                return json_text(status)
 
             return json_text({"status": "error", "message": f"Unknown tool: {name}"})
     except ValueError as exc:

@@ -111,6 +111,12 @@ class OpencodeAdapter:
         if refresh:
             cmd.append("--refresh")
 
+        safe_env = {
+            key: os.environ[key] for key in self.config.safe_env_keys if key in os.environ
+        }
+        if "PATH" not in safe_env and "PATH" in os.environ:
+            safe_env["PATH"] = os.environ["PATH"]
+
         completed = run(
             cmd,
             cwd=os.path.realpath(cwd),
@@ -118,7 +124,7 @@ class OpencodeAdapter:
             capture_output=True,
             timeout=timeout_seconds,
             stdin=DEVNULL,
-            env={"PATH": os.environ.get("PATH", "")},
+            env=safe_env,
             check=False,
         )
         if completed.returncode != 0:

@@ -440,16 +440,14 @@ def test_gemini_adapter_build_command_with_model():
     ]
 
 
-def test_gemini_adapter_check_installed(mocker):
-    mocker.patch("moonbridge.adapters.gemini.shutil.which", return_value="/usr/local/bin/gemini")
+def test_gemini_adapter_check_installed(mock_which_gemini):
     adapter = GeminiAdapter()
     installed, path = adapter.check_installed()
     assert installed is True
     assert path == "/usr/local/bin/gemini"
 
 
-def test_gemini_adapter_check_not_installed(mocker):
-    mocker.patch("moonbridge.adapters.gemini.shutil.which", return_value=None)
+def test_gemini_adapter_check_not_installed(mock_which_no_gemini):
     adapter = GeminiAdapter()
     installed, path = adapter.check_installed()
     assert installed is False
