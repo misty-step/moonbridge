@@ -47,7 +47,10 @@ PROMPT_PARAM = ParameterDef(
 # Note: ADAPTER_PARAM enum is populated dynamically via build_adapter_param()
 ADAPTER_PARAM_BASE = ParameterDef(
     type="string",
-    description="Backend to use (kimi, codex). Defaults to MOONBRIDGE_ADAPTER env or kimi.",
+    description=(
+        "Backend to use. Defaults to MOONBRIDGE_ADAPTER env var "
+        "(falls back to kimi when unset)."
+    ),
     # enum is set dynamically
 )
 
@@ -61,8 +64,7 @@ THINKING_PARAM = ParameterDef(
 TIMEOUT_PARAM_BASE = ParameterDef(
     type="integer",
     description=(
-        "Max execution time (30-3600s). "
-        "Defaults: Codex=1800s (30min), Kimi=600s (10min). "
+        "Max execution time (30-3600s). Adapter-specific defaults apply when unset. "
         "Complex implementations may need full 30min+."
     ),
     minimum=30,
@@ -73,7 +75,8 @@ TIMEOUT_PARAM_BASE = ParameterDef(
 MODEL_PARAM = ParameterDef(
     type="string",
     description=(
-        "Model to use (e.g., 'gpt-5.2-codex', 'kimi-k2.5'). "
+        "Model to use (e.g., 'gpt-5.2-codex', 'kimi-k2.5', "
+        "'openrouter/minimax/minimax-m2.5', 'gemini-2.5-pro'). "
         "Falls back to MOONBRIDGE_{ADAPTER}_MODEL or MOONBRIDGE_MODEL env vars."
     ),
 )
@@ -91,7 +94,7 @@ REASONING_EFFORT_PARAM = ParameterDef(
     type="string",
     description=(
         "Reasoning effort for Codex (low, medium, high, xhigh). "
-        "Ignored for Kimi (use thinking instead)."
+        "Ignored for non-Codex adapters."
     ),
     enum=("low", "medium", "high", "xhigh"),
 )
@@ -101,9 +104,23 @@ REASONING_EFFORT_PARAM_SHORT = ParameterDef(
     type="string",
     description=(
         "Reasoning effort for Codex (low, medium, high, xhigh). "
-        "Ignored for Kimi."
+        "Ignored for non-Codex adapters."
     ),
     enum=("low", "medium", "high", "xhigh"),
+)
+
+PROVIDER_PARAM = ParameterDef(
+    type="string",
+    description=(
+        "Optional provider filter for model listing (OpenCode only). "
+        "Example: 'openrouter'."
+    ),
+)
+
+REFRESH_PARAM = ParameterDef(
+    type="boolean",
+    description="Refresh model catalog from provider/CLI where supported.",
+    default=False,
 )
 
 
@@ -177,7 +194,18 @@ LIST_ADAPTERS_TOOL = ToolDef(
 CHECK_STATUS_TOOL = ToolDef(
     name="check_status",
     description_template="{status_description}",
-    parameters=(),
+    parameters=(("adapter", ADAPTER_PARAM_BASE),),
+    required=(),
+)
+
+LIST_MODELS_TOOL = ToolDef(
+    name="list_models",
+    description_template="List model options for an adapter (static and/or dynamic catalogs).",
+    parameters=(
+        ("adapter", ADAPTER_PARAM_BASE),
+        ("provider", PROVIDER_PARAM),
+        ("refresh", REFRESH_PARAM),
+    ),
     required=(),
 )
 
@@ -305,7 +333,18 @@ def build_tools(
     list_adapters_schema: dict[str, Any] = {"type": "object", "properties": {}}
 
     # check_status
-    check_status_schema: dict[str, Any] = {"type": "object", "properties": {}}
+    check_status_schema = build_input_schema(
+        CHECK_STATUS_TOOL,
+        adapter_names,
+        default_timeout,
+    )
+
+    # list_models
+    list_models_schema = build_input_schema(
+        LIST_MODELS_TOOL,
+        adapter_names,
+        default_timeout,
+    )
 
     return [
         Tool(
@@ -322,6 +361,11 @@ def build_tools(
             name="list_adapters",
             description="List available adapters and their status",
             inputSchema=list_adapters_schema,
+        ),
+        Tool(
+            name="list_models",
+            description="List model options for an adapter",
+            inputSchema=list_models_schema,
         ),
         Tool(
             name="check_status",

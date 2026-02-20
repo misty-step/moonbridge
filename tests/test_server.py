@@ -520,6 +520,41 @@ async def test_check_status_installed(mock_which_kimi: Any, monkeypatch: Any) ->
 
 
 @pytest.mark.asyncio
+async def test_check_status_with_adapter_override(
+    mock_which_codex: Any, mock_which_kimi: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("MOONBRIDGE_ADAPTER", "kimi")
+
+    def fake_run(
+        _adapter: Any,
+        prompt: str,
+        thinking: bool,
+        cwd: str,
+        timeout_seconds: int,
+        agent_index: int,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        request_id: str | None = None,
+    ) -> AgentResult:
+        return AgentResult(
+            status="success",
+            output="ok",
+            stderr=None,
+            returncode=0,
+            duration_ms=1,
+            agent_index=0,
+        )
+
+    monkeypatch.setattr(server_module, "_run_cli_sync", fake_run)
+
+    result = await server_module.handle_tool("check_status", {"adapter": "codex"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert "codex" in payload["message"]
+
+
+@pytest.mark.asyncio
 async def test_check_status_not_installed(mock_which_no_kimi: Any) -> None:
     result = await server_module.handle_tool("check_status", {})
     payload = json.loads(result[0].text)
@@ -576,7 +611,7 @@ async def test_list_adapters_tool_output(monkeypatch: Any) -> None:
     payload = json.loads(result[0].text)
 
     by_name = {item["name"]: item for item in payload}
-    assert {"kimi", "codex"} <= set(by_name.keys())
+    assert {"kimi", "codex", "opencode", "gemini"} <= set(by_name.keys())
     assert by_name["kimi"]["installed"] is True
     assert by_name["kimi"]["authenticated"] is True
     assert "kimi-k2.5" in by_name["kimi"]["known_models"]
@@ -588,14 +623,69 @@ async def test_tool_schema_includes_adapter_enum() -> None:
     tools = await server_module.list_tools()
     spawn_tool = next(tool for tool in tools if tool.name == "spawn_agent")
     parallel_tool = next(tool for tool in tools if tool.name == "spawn_agents_parallel")
+    list_models_tool = next(tool for tool in tools if tool.name == "list_models")
+    check_status_tool = next(tool for tool in tools if tool.name == "check_status")
 
     spawn_enum = spawn_tool.inputSchema["properties"]["adapter"]["enum"]
     parallel_enum = parallel_tool.inputSchema["properties"]["agents"]["items"]["properties"][
         "adapter"
     ]["enum"]
+    list_models_enum = list_models_tool.inputSchema["properties"]["adapter"]["enum"]
+    check_status_enum = check_status_tool.inputSchema["properties"]["adapter"]["enum"]
 
-    assert set(spawn_enum) == {"kimi", "codex", "opencode"}
-    assert set(parallel_enum) == {"kimi", "codex", "opencode"}
+    expected = {"kimi", "codex", "opencode", "gemini"}
+    assert set(spawn_enum) == expected
+    assert set(parallel_enum) == expected
+    assert set(list_models_enum) == expected
+    assert set(check_status_enum) == expected
+
+
+@pytest.mark.asyncio
+async def test_list_models_returns_adapter_catalog(monkeypatch: Any) -> None:
+    adapter = server_module.get_adapter("codex")
+    monkeypatch.setattr(adapter, "check_installed", lambda: (True, "/bin/codex"))
+    monkeypatch.setattr(
+        adapter,
+        "list_models",
+        lambda cwd, provider=None, refresh=False, timeout_seconds=30: (
+            ["model-a", "model-a", "model-b"],
+            "static",
+        ),
+    )
+
+    result = await server_module.handle_tool("list_models", {"adapter": "codex"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert payload["adapter"] == "codex"
+    assert payload["source"] == "static"
+    assert payload["count"] == 2
+    assert payload["models"] == ["model-a", "model-b"]
+
+
+@pytest.mark.asyncio
+async def test_list_models_not_installed_returns_error(monkeypatch: Any) -> None:
+    adapter = server_module.get_adapter("gemini")
+    monkeypatch.setattr(adapter, "check_installed", lambda: (False, None))
+
+    result = await server_module.handle_tool("list_models", {"adapter": "gemini"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert payload["models"] == []
+    assert payload["adapter"] == "gemini"
+
+
+@pytest.mark.asyncio
+async def test_list_models_provider_rejected_for_non_opencode() -> None:
+    result = await server_module.handle_tool(
+        "list_models",
+        {"adapter": "codex", "provider": "openrouter"},
+    )
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "provider filter is only supported for opencode" in payload["message"]
 
 
 @pytest.mark.asyncio

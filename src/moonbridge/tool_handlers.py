@@ -36,6 +36,7 @@ class ToolHandlerDeps:
     preflight_check: Callable[[CLIAdapter, int], AgentResult | None]
     run_cli: RunCliFn
     adapter_info: Callable[[str, CLIAdapter], dict[str, Any]]
+    model_catalog: Callable[[str, CLIAdapter, str | None, bool], dict[str, Any]]
     status_check: Callable[[str, CLIAdapter], dict[str, Any]]
 
 
@@ -204,8 +205,16 @@ async def handle_tool(
                 ]
                 return json_text(info)
 
+            if name == "list_models":
+                adapter = deps.get_adapter(arguments.get("adapter"))
+                provider_raw = arguments.get("provider")
+                provider = provider_raw.strip() if isinstance(provider_raw, str) else None
+                provider = provider or None
+                refresh = bool(arguments.get("refresh", False))
+                return json_text(deps.model_catalog(cwd, adapter, provider, refresh))
+
             if name == "check_status":
-                adapter = deps.get_adapter(None)
+                adapter = deps.get_adapter(arguments.get("adapter"))
                 return json_text(deps.status_check(cwd, adapter))
 
             return json_text({"status": "error", "message": f"Unknown tool: {name}"})
