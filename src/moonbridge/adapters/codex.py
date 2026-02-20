@@ -97,3 +97,16 @@ class CodexAdapter:
         """Check if Codex CLI is installed."""
         path = shutil.which(self.config.cli_command)
         return (path is not None, path)
+
+    def list_models(
+        self,
+        cwd: str,
+        provider: str | None = None,
+        refresh: bool = False,
+        timeout_seconds: int = 30,
+    ) -> tuple[list[str], str]:
+        _ = cwd
+        _ = provider
+        _ = refresh
+        _ = timeout_seconds
+        return (list(self.config.known_models), "static")

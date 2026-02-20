@@ -4,9 +4,14 @@ OpenCode supports many providers via a single CLI. Model selection uses the
 `provider/model` form (for example: `openrouter/minimax/minimax-m2.5`).
 """
 
+import os
+import re
 import shutil
+from subprocess import DEVNULL, run
 
 from .base import AdapterConfig
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 class OpencodeAdapter:
@@ -91,3 +96,42 @@ class OpencodeAdapter:
         path = shutil.which(self.config.cli_command)
         return (path is not None, path)
 
+    def list_models(
+        self,
+        cwd: str,
+        provider: str | None = None,
+        refresh: bool = False,
+        timeout_seconds: int = 30,
+    ) -> tuple[list[str], str]:
+        cmd = [self.config.cli_command, "models"]
+        if provider:
+            if provider.startswith("-"):
+                raise ValueError(f"provider cannot start with '-': {provider}")
+            cmd.append(provider)
+        if refresh:
+            cmd.append("--refresh")
+
+        completed = run(
+            cmd,
+            cwd=os.path.realpath(cwd),
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            stdin=DEVNULL,
+            env={"PATH": os.environ.get("PATH", "")},
+            check=False,
+        )
+        if completed.returncode != 0:
+            message = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+            raise RuntimeError(f"opencode models failed: {message}")
+
+        models: list[str] = []
+        for raw_line in completed.stdout.splitlines():
+            line = _ANSI_ESCAPE_RE.sub("", raw_line).strip()
+            if not line or line.startswith("Usage:"):
+                continue
+            models.append(line)
+        if not models:
+            raise RuntimeError("opencode models returned no models")
+
+        return (models, "dynamic")

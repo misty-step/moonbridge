@@ -3,6 +3,7 @@ import pytest
 from moonbridge.adapters import CLIAdapter, get_adapter, list_adapters
 from moonbridge.adapters.base import AgentResult
 from moonbridge.adapters.codex import CodexAdapter
+from moonbridge.adapters.gemini import GeminiAdapter
 from moonbridge.adapters.kimi import KimiAdapter
 from moonbridge.adapters.opencode import OpencodeAdapter
 
@@ -196,6 +197,9 @@ def test_get_adapter_unknown_raises():
 def test_list_adapters():
     adapters = list_adapters()
     assert "kimi" in adapters
+    assert "codex" in adapters
+    assert "opencode" in adapters
+    assert "gemini" in adapters
 
 
 def test_kimi_adapter_config_values():
@@ -307,6 +311,8 @@ def test_list_adapters_includes_codex():
     adapters = list_adapters()
     assert "codex" in adapters
     assert "kimi" in adapters
+    assert "opencode" in adapters
+    assert "gemini" in adapters
 
 
 # OpenCode adapter tests
@@ -365,6 +371,103 @@ def test_opencode_adapter_config_values():
 
 def test_opencode_adapter_rejects_model_starting_with_dash():
     adapter = OpencodeAdapter()
+    with pytest.raises(ValueError, match="model cannot start with"):
+        adapter.build_command("hello", thinking=False, model="--help")
+
+
+def test_opencode_adapter_list_models_dynamic(mocker):
+    adapter = OpencodeAdapter()
+    completed = mocker.Mock()
+    completed.returncode = 0
+    completed.stdout = "openrouter/gpt-5\nopenrouter/gpt-5-mini\n"
+    completed.stderr = ""
+    mock_run = mocker.patch("moonbridge.adapters.opencode.run", return_value=completed)
+
+    models, source = adapter.list_models(
+        ".",
+        provider="openrouter",
+        refresh=True,
+        timeout_seconds=10,
+    )
+
+    assert source == "dynamic"
+    assert models == ["openrouter/gpt-5", "openrouter/gpt-5-mini"]
+    mock_run.assert_called_once()
+
+
+def test_opencode_adapter_list_models_raises_on_failure(mocker):
+    adapter = OpencodeAdapter()
+    completed = mocker.Mock()
+    completed.returncode = 1
+    completed.stdout = ""
+    completed.stderr = "boom"
+    mocker.patch("moonbridge.adapters.opencode.run", return_value=completed)
+
+    with pytest.raises(RuntimeError, match="opencode models failed"):
+        adapter.list_models(".", timeout_seconds=10)
+
+
+# Gemini adapter tests
+
+
+def test_gemini_adapter_build_command_basic():
+    adapter = GeminiAdapter()
+    cmd = adapter.build_command("hello world", thinking=False)
+    assert cmd == [
+        "gemini",
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "text",
+        "-p",
+        "hello world",
+    ]
+
+
+def test_gemini_adapter_build_command_with_model():
+    adapter = GeminiAdapter()
+    cmd = adapter.build_command("hello world", thinking=False, model="gemini-2.5-pro")
+    assert cmd == [
+        "gemini",
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "text",
+        "-m",
+        "gemini-2.5-pro",
+        "-p",
+        "hello world",
+    ]
+
+
+def test_gemini_adapter_check_installed(mocker):
+    mocker.patch("moonbridge.adapters.gemini.shutil.which", return_value="/usr/local/bin/gemini")
+    adapter = GeminiAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is True
+    assert path == "/usr/local/bin/gemini"
+
+
+def test_gemini_adapter_check_not_installed(mocker):
+    mocker.patch("moonbridge.adapters.gemini.shutil.which", return_value=None)
+    adapter = GeminiAdapter()
+    installed, path = adapter.check_installed()
+    assert installed is False
+    assert path is None
+
+
+def test_gemini_adapter_config_values():
+    adapter = GeminiAdapter()
+    assert adapter.config.name == "gemini"
+    assert adapter.config.cli_command == "gemini"
+    assert adapter.config.supports_thinking is False
+    assert adapter.config.default_model == "gemini-2.5-pro"
+    assert "GEMINI_API_KEY" in adapter.config.safe_env_keys
+    assert "Gemini" in adapter.config.tool_description
+
+
+def test_gemini_adapter_rejects_model_starting_with_dash():
+    adapter = GeminiAdapter()
     with pytest.raises(ValueError, match="model cannot start with"):
         adapter.build_command("hello", thinking=False, model="--help")
 

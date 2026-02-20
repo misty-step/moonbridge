@@ -2,6 +2,7 @@ import os
 
 from .base import AdapterConfig, CLIAdapter
 from .codex import CodexAdapter
+from .gemini import GeminiAdapter
 from .kimi import KimiAdapter
 from .opencode import OpencodeAdapter
 
@@ -9,6 +10,7 @@ ADAPTER_REGISTRY: dict[str, CLIAdapter] = {
     "kimi": KimiAdapter(),
     "codex": CodexAdapter(),
     "opencode": OpencodeAdapter(),
+    "gemini": GeminiAdapter(),
 }
 
 

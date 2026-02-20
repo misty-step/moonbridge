@@ -70,3 +70,18 @@ class CLIAdapter(Protocol):
     def check_installed(self) -> tuple[bool, str | None]:
         """Check if CLI is installed. Returns (installed, path)."""
         ...
+
+    def list_models(
+        self,
+        cwd: str,
+        provider: str | None = None,
+        refresh: bool = False,
+        timeout_seconds: int = 30,
+    ) -> tuple[list[str], str]:
+        """List models available to this adapter.
+
+        Returns:
+            A tuple of (models, source), where source is typically
+            "static" (from config) or "dynamic" (queried from CLI/API).
+        """
+        ...
