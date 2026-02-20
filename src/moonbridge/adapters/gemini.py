@@ -1,17 +1,19 @@
+"""Gemini CLI adapter for Moonbridge."""
+
 import shutil
 
 from .base import AdapterConfig, static_model_catalog
 
 
-class KimiAdapter:
-    """Kimi CLI adapter."""
+class GeminiAdapter:
+    """Gemini CLI adapter."""
 
     config = AdapterConfig(
-        name="kimi",
-        cli_command="kimi",
+        name="gemini",
+        cli_command="gemini",
         tool_description=(
-            "Spawn a Kimi K2.5 agent in the current directory. "
-            "Kimi excels at frontend development and visual coding."
+            "Spawn a Gemini CLI agent to execute tasks. "
+            "Gemini supports fast multimodal and coding workflows."
         ),
         safe_env_keys=(
             "PATH",
@@ -31,14 +33,31 @@ class KimiAdapter:
             "SSL_CERT_FILE",
             "REQUESTS_CA_BUNDLE",
             "CURL_CA_BUNDLE",
-            "KIMI_CONFIG_PATH",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GOOGLE_CLOUD_PROJECT",
+            "GOOGLE_CLOUD_LOCATION",
+            "GOOGLE_GENAI_USE_VERTEXAI",
         ),
-        auth_patterns=("login required", "unauthorized", "authentication failed", "401", "403"),
-        auth_message="Run: kimi login",
-        install_hint="uv tool install kimi-cli",
-        supports_thinking=True,
-        known_models=("kimi-k2.5",),
-        default_timeout=600,  # 10 minutes - Kimi is faster
+        auth_patterns=(
+            "unauthorized",
+            "authentication",
+            "api key",
+            "login required",
+            "not authenticated",
+            "401",
+            "403",
+        ),
+        auth_message="Run: gemini (complete login flow) or set GEMINI_API_KEY",
+        install_hint="npm install -g @google/gemini-cli",
+        supports_thinking=False,
+        known_models=(
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+        ),
+        default_timeout=1200,
+        default_model="gemini-2.5-pro",
     )
 
     def build_command(
@@ -48,25 +67,22 @@ class KimiAdapter:
         model: str | None = None,
         reasoning_effort: str | None = None,
     ) -> list[str]:
-        """Build Kimi CLI command.
+        """Build Gemini CLI command."""
+        _ = thinking
+        _ = reasoning_effort
 
-        Args:
-            prompt: Task prompt for the agent.
-            thinking: Enable extended thinking mode.
-            model: Model to use. Optional.
-            reasoning_effort: Ignored - Kimi uses thinking mode instead.
-
-        Raises:
-            ValueError: If model starts with '-' (flag injection prevention).
-        """
-        cmd = [self.config.cli_command, "--print"]
-        if thinking:
-            cmd.append("--thinking")
+        cmd = [
+            self.config.cli_command,
+            "--approval-mode",
+            "yolo",
+            "--output-format",
+            "text",
+        ]
         if model:
             if model.startswith("-"):
                 raise ValueError(f"model cannot start with '-': {model}")
             cmd.extend(["-m", model])
-        cmd.extend(["--prompt", prompt])
+        cmd.extend(["-p", prompt])
         return cmd
 
     def check_installed(self) -> tuple[bool, str | None]:

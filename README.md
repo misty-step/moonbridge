@@ -17,6 +17,7 @@ uvx moonbridge
    | Kimi (default) | `uv tool install --python 3.13 kimi-cli` | `kimi login` |
    | Codex | `npm install -g @openai/codex` | Set `OPENAI_API_KEY` |
    | OpenCode | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` |
+   | Gemini CLI | `npm install -g @google/gemini-cli` | Run `gemini` login flow or set `GEMINI_API_KEY` |
 
 2. **Add to MCP config** (`~/.mcp.json`):
    ```json
@@ -35,7 +36,7 @@ uvx moonbridge
 
 ## Security Warning (Read First)
 
-Moonbridge executes agentic CLIs (Kimi/Codex). A malicious or careless prompt can cause an
+Moonbridge executes agentic CLIs (Kimi/Codex/OpenCode/Gemini). A malicious or careless prompt can cause an
 agent to run shell commands, read accessible files, or exfiltrate data via network calls.
 
 Moonbridge adds guardrails (`MOONBRIDGE_ALLOWED_DIRS`, environment allowlists, optional
@@ -82,7 +83,7 @@ export MOONBRIDGE_SKIP_UPDATE_CHECK=1
 
 ### Spawn Process
 1. Moonbridge validates the prompt and working directory
-2. Resolves which adapter to use (Kimi, Codex)
+2. Resolves which adapter to use (Kimi, Codex, OpenCode, Gemini)
 3. Adapter builds the CLI command with appropriate flags
 4. Spawns subprocess in a separate process group
 5. Captures stdout/stderr, enforces timeout
@@ -105,8 +106,9 @@ MCP Client → stdio → Moonbridge → adapter → CLI subprocess
 |------|----------|
 | `spawn_agent` | Single task: "Write tests for auth.ts" |
 | `spawn_agents_parallel` | Go wide: 10 agents, 10 approaches, pick the best |
-| `check_status` | Verify the configured CLI is installed and authenticated |
+| `check_status` | Verify an adapter CLI is installed and authenticated |
 | `list_adapters` | Show available adapters and their status |
+| `list_models` | Show known/dynamic model options for an adapter |
 
 ### Example: Parallel Exploration
 
@@ -129,8 +131,8 @@ Three approaches. One request. You choose the winner.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `prompt` | string | Yes | Task description for the agent |
-| `adapter` | string | No | Backend to use: `kimi`, `codex`, `opencode` (default: `kimi`) |
-| `model` | string | No | Model override (e.g., `gpt-5.2-codex`, `openrouter/minimax/minimax-m2.5`). For `codex`, default is `gpt-5.3-codex`. For `opencode`, models use `provider/model`. |
+| `adapter` | string | No | Backend to use: `kimi`, `codex`, `opencode`, `gemini` (default from `MOONBRIDGE_ADAPTER`, fallback `kimi`) |
+| `model` | string | No | Model override (e.g., `gpt-5.2-codex`, `openrouter/minimax/minimax-m2.5`, `gemini-2.5-pro`). For `opencode`, models use `provider/model`. |
 | `thinking` | boolean | No | Enable reasoning mode (Kimi only) |
 | `reasoning_effort` | string | No | Reasoning budget: `low`, `medium`, `high`, `xhigh` (Codex only, default `xhigh`) |
 | `timeout_seconds` | integer | No | Override default timeout (30-3600) |
@@ -142,10 +144,24 @@ Three approaches. One request. You choose the winner.
 | `agents` | array | Yes | List of agent configs (max 10) |
 | `agents[].prompt` | string | Yes | Task for this agent |
 | `agents[].adapter` | string | No | Backend for this agent |
-| `agents[].model` | string | No | Model override for this agent (`codex` default: `gpt-5.3-codex`; `opencode` uses `provider/model`) |
+| `agents[].model` | string | No | Model override for this agent (`codex` default: `gpt-5.3-codex`; `opencode` uses `provider/model`; `gemini` default: `gemini-2.5-pro`) |
 | `agents[].thinking` | boolean | No | Enable reasoning (Kimi only) |
 | `agents[].reasoning_effort` | string | No | Reasoning budget (Codex only, default `xhigh`) |
 | `agents[].timeout_seconds` | integer | No | Timeout for this agent |
+
+**`check_status`**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `adapter` | string | No | Adapter to check explicitly. Defaults to `MOONBRIDGE_ADAPTER` when omitted. |
+
+**`list_models`**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `adapter` | string | No | Adapter to inspect. Defaults to `MOONBRIDGE_ADAPTER` when omitted. |
+| `provider` | string | No | Provider filter for OpenCode model catalogs (e.g., `openrouter`). |
+| `refresh` | boolean | No | Refresh model catalog for adapters that support dynamic discovery. |
 
 ## Response Format
 
@@ -173,6 +189,15 @@ with original sizes.
 |----------|-------------|
 | `MOONBRIDGE_ADAPTER` | Default adapter (default: `kimi`) |
 | `MOONBRIDGE_TIMEOUT` | Default timeout in seconds (30-3600) |
+| `MOONBRIDGE_KIMI_TIMEOUT` | Kimi-specific default timeout |
+| `MOONBRIDGE_CODEX_TIMEOUT` | Codex-specific default timeout |
+| `MOONBRIDGE_OPENCODE_TIMEOUT` | OpenCode-specific default timeout |
+| `MOONBRIDGE_GEMINI_TIMEOUT` | Gemini-specific default timeout |
+| `MOONBRIDGE_MODEL` | Global default model override |
+| `MOONBRIDGE_KIMI_MODEL` | Kimi-specific model override |
+| `MOONBRIDGE_CODEX_MODEL` | Codex-specific model override |
+| `MOONBRIDGE_OPENCODE_MODEL` | OpenCode-specific model override |
+| `MOONBRIDGE_GEMINI_MODEL` | Gemini-specific model override |
 | `MOONBRIDGE_MAX_AGENTS` | Maximum parallel agents |
 | `MOONBRIDGE_MAX_OUTPUT_CHARS` | Max chars returned per agent across `stdout`+`stderr` (default 120000; timeout tails are per stream) |
 | `MOONBRIDGE_ALLOWED_DIRS` | Colon-separated allowlist of working directories |
@@ -185,7 +210,7 @@ with original sizes.
 
 ## Security
 
-Moonbridge inherits the security model of the selected adapter CLI. Kimi and Codex are
+Moonbridge inherits the security model of the selected adapter CLI. Kimi, Codex, OpenCode, and Gemini are
 agentic CLIs; prompts can trigger command execution, file access, and network activity
 within the process permissions.
 
@@ -248,6 +273,10 @@ which codex
 # OpenCode
 curl -fsSL https://opencode.ai/install | bash
 which opencode
+
+# Gemini
+npm install -g @google/gemini-cli
+which gemini
 ```
 
 ### "auth_error" responses
@@ -263,11 +292,14 @@ export OPENAI_API_KEY=sk-...
 
 # OpenCode
 opencode auth login
+
+# Gemini
+gemini  # complete login flow, or set GEMINI_API_KEY
 ```
 
 ### Timeout errors
 
-Adapters have sensible defaults: Codex=1800s (30min), Kimi=600s (10min).
+Adapters have sensible defaults: Codex=1800s, Kimi=600s, OpenCode=1200s, Gemini=1200s.
 
 For exceptionally long tasks, override explicitly:
 
@@ -281,6 +313,7 @@ Or set per-adapter defaults via environment:
 export MOONBRIDGE_CODEX_TIMEOUT=2400  # 40 minutes
 export MOONBRIDGE_KIMI_TIMEOUT=900    # 15 minutes
 export MOONBRIDGE_OPENCODE_TIMEOUT=1200  # 20 minutes
+export MOONBRIDGE_GEMINI_TIMEOUT=1200  # 20 minutes
 ```
 
 ## Timeout Best Practices

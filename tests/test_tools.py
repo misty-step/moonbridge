@@ -17,15 +17,15 @@ class TestBuildTools:
     def tools(self):
         """Build tools with test values."""
         return build_tools(
-            adapter_names=("kimi", "codex"),
+            adapter_names=("kimi", "codex", "opencode", "gemini"),
             default_timeout=600,
             tool_description="Spawn a Kimi agent",
             status_description="Check Kimi CLI status",
         )
 
-    def test_returns_exactly_four_tools(self, tools):
-        """build_tools returns exactly 4 tools."""
-        assert len(tools) == 4
+    def test_returns_exactly_five_tools(self, tools):
+        """build_tools returns exactly 5 tools."""
+        assert len(tools) == 5
 
     def test_tool_names_correct(self, tools):
         """All tool names are present and correct."""
@@ -34,6 +34,7 @@ class TestBuildTools:
             "spawn_agent",
             "spawn_agents_parallel",
             "list_adapters",
+            "list_models",
             "check_status",
         ]
 
@@ -57,9 +58,21 @@ class TestBuildTools:
 
     def test_check_status_empty_required(self, tools):
         """check_status has no required parameters."""
-        check_status = tools[3]
+        check_status = tools[4]
         assert check_status.name == "check_status"
         assert "required" not in check_status.inputSchema
+
+    def test_list_models_empty_required(self, tools):
+        """list_models has no required parameters."""
+        list_models = tools[3]
+        assert list_models.name == "list_models"
+        assert "required" not in list_models.inputSchema
+
+    def test_check_status_schema_has_adapter_param(self, tools):
+        """check_status supports optional adapter override."""
+        check_status = tools[4]
+        props = check_status.inputSchema["properties"]
+        assert "adapter" in props
 
 
 class TestSpawnAgentSchema:
@@ -69,7 +82,7 @@ class TestSpawnAgentSchema:
     def spawn_agent_tool(self):
         """Get spawn_agent tool for schema inspection."""
         tools = build_tools(
-            adapter_names=("kimi", "codex"),
+            adapter_names=("kimi", "codex", "opencode", "gemini"),
             default_timeout=600,
             tool_description="Test description",
             status_description="Status description",
@@ -102,7 +115,7 @@ class TestSpawnAgentSchema:
         props = spawn_agent_tool.inputSchema["properties"]
 
         assert props["adapter"]["type"] == "string"
-        assert props["adapter"]["enum"] == ["kimi", "codex"]
+        assert props["adapter"]["enum"] == ["kimi", "codex", "opencode", "gemini"]
 
     def test_thinking_schema(self, spawn_agent_tool):
         """thinking property has correct schema with default."""
@@ -142,7 +155,7 @@ class TestSpawnAgentsParallelSchema:
     def parallel_tool(self):
         """Get spawn_agents_parallel tool for schema inspection."""
         tools = build_tools(
-            adapter_names=("kimi", "codex"),
+            adapter_names=("kimi", "codex", "opencode", "gemini"),
             default_timeout=600,
             tool_description="Test description",
             status_description="Status description",
@@ -224,8 +237,35 @@ class TestDynamicParameterInjection:
             tool_description="Test",
             status_description="Custom status description",
         )
-        check_status = tools[3]
+        check_status = tools[4]
         assert check_status.description == "Custom status description"
+
+
+class TestListModelsSchema:
+    """Tests verifying list_models schema structure."""
+
+    @pytest.fixture
+    def list_models_tool(self):
+        tools = build_tools(
+            adapter_names=("kimi", "codex", "opencode", "gemini"),
+            default_timeout=600,
+            tool_description="Test description",
+            status_description="Status description",
+        )
+        return tools[3]
+
+    def test_has_expected_properties(self, list_models_tool):
+        props = list_models_tool.inputSchema["properties"]
+        assert set(props.keys()) == {"adapter", "provider", "refresh"}
+
+    def test_adapter_enum_uses_dynamic_adapter_names(self, list_models_tool):
+        props = list_models_tool.inputSchema["properties"]
+        assert props["adapter"]["enum"] == ["kimi", "codex", "opencode", "gemini"]
+
+    def test_refresh_default_false(self, list_models_tool):
+        props = list_models_tool.inputSchema["properties"]
+        assert props["refresh"]["type"] == "boolean"
+        assert props["refresh"]["default"] is False
 
 
 class TestTimeoutValidation:

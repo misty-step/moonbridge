@@ -4,7 +4,7 @@ name: Cerberus Council
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -30,7 +30,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: misty-step/cerberus@bd596a2ebc2bb5fa6cfaa79c4f128fa22b847532 # v1
+      # Track latest Cerberus v2 automatically (do not pin old SHA).
+      - uses: misty-step/cerberus@v2
         with:
           perspective: ${{ matrix.perspective }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,6 +44,7 @@ jobs:
     if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
-      - uses: misty-step/cerberus/verdict@bd596a2ebc2bb5fa6cfaa79c4f128fa22b847532 # v1
+      # Track latest Cerberus v2 automatically (do not pin old SHA).
+      - uses: misty-step/cerberus/verdict@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -118,3 +118,18 @@ def mock_which_opencode(mocker):
 def mock_which_no_opencode(mocker):
     """Mock shutil.which to NOT find opencode."""
     return mocker.patch("moonbridge.adapters.opencode.shutil.which", return_value=None)
+
+
+@pytest.fixture
+def mock_which_gemini(mocker):
+    """Mock shutil.which to find gemini."""
+    return mocker.patch(
+        "moonbridge.adapters.gemini.shutil.which",
+        return_value="/usr/local/bin/gemini",
+    )
+
+
+@pytest.fixture
+def mock_which_no_gemini(mocker):
+    """Mock shutil.which to NOT find gemini."""
+    return mocker.patch("moonbridge.adapters.gemini.shutil.which", return_value=None)

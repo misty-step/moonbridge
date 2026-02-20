@@ -2,7 +2,7 @@
 
 import shutil
 
-from .base import AdapterConfig
+from .base import AdapterConfig, static_model_catalog
 
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 
@@ -97,3 +97,12 @@ class CodexAdapter:
         """Check if Codex CLI is installed."""
         path = shutil.which(self.config.cli_command)
         return (path is not None, path)
+
+    def list_models(
+        self,
+        cwd: str,
+        provider: str | None = None,
+        refresh: bool = False,
+        timeout_seconds: int = 30,
+    ) -> tuple[list[str], str]:
+        return static_model_catalog(self.config)

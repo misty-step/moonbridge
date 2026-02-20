@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -18,6 +20,7 @@ class AdapterConfig:
     default_timeout: int = 600
     default_model: str | None = None
     default_reasoning_effort: str | None = None
+    supports_provider_filter: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,3 +73,26 @@ class CLIAdapter(Protocol):
     def check_installed(self) -> tuple[bool, str | None]:
         """Check if CLI is installed. Returns (installed, path)."""
         ...
+
+    def list_models(
+        self,
+        cwd: str,
+        provider: str | None = None,
+        refresh: bool = False,
+        timeout_seconds: int = 30,
+    ) -> tuple[list[str], str]:
+        """List models available to this adapter.
+
+        Returns:
+            A tuple of (models, source), where source is typically
+            "static" (from config) or "dynamic" (queried from CLI/API).
+        """
+        ...
+
+
+def static_model_catalog(
+    config: AdapterConfig,
+    **_kwargs: Any,
+) -> tuple[list[str], str]:
+    """Default list_models for adapters with a static known-models catalog."""
+    return (list(config.known_models), "static")

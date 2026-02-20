@@ -683,6 +683,71 @@ def _status_check(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
     }
 
 
+def _model_catalog(
+    cwd: str,
+    adapter: CLIAdapter,
+    provider: str | None,
+    refresh: bool,
+) -> dict[str, Any]:
+    if provider and not adapter.config.supports_provider_filter:
+        return {
+            "status": "error",
+            "message": (
+                f"provider filter is not supported for {adapter.config.name}"
+            ),
+        }
+
+    installed, _path = adapter.check_installed()
+    if not installed:
+        return {
+            "status": "error",
+            "message": (
+                f"{adapter.config.name} CLI not found. Install: {adapter.config.install_hint}"
+            ),
+            "adapter": adapter.config.name,
+            "provider": provider,
+            "refresh": refresh,
+            "models": [],
+        }
+
+    timeout = min(DEFAULT_TIMEOUT, 120)
+    try:
+        models, source = adapter.list_models(
+            cwd,
+            provider=provider,
+            refresh=refresh,
+            timeout_seconds=timeout,
+        )
+    except Exception as exc:
+        return {
+            "status": "error",
+            "message": str(exc),
+            "adapter": adapter.config.name,
+            "provider": provider,
+            "refresh": refresh,
+            "models": [],
+        }
+
+    deduped_models: list[str] = []
+    seen: set[str] = set()
+    for model in models:
+        normalized = model.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped_models.append(normalized)
+
+    return {
+        "status": "success",
+        "adapter": adapter.config.name,
+        "provider": provider,
+        "refresh": refresh,
+        "source": source,
+        "count": len(deduped_models),
+        "models": deduped_models,
+    }
+
+
 def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
     installed, _path = adapter.check_installed()
     authenticated = False
@@ -702,12 +767,19 @@ def _adapter_info(cwd: str, adapter: CLIAdapter) -> dict[str, Any]:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """Build MCP tool metadata for the active adapter."""
-    adapter = get_adapter()
-    tool_desc = adapter.config.tool_description
-    status_desc = f"Verify {adapter.config.name} CLI is installed and authenticated"
+    """Build MCP tool metadata for all registered adapters."""
+    adapter_names = tuple(ADAPTER_REGISTRY.keys())
+    adapters = ", ".join(adapter_names)
+    tool_desc = (
+        "Spawn an AI coding agent using adapter CLIs. "
+        f"Available adapters: {adapters}."
+    )
+    status_desc = (
+        "Verify an adapter CLI is installed and authenticated. "
+        "Defaults to MOONBRIDGE_ADAPTER when adapter is omitted."
+    )
     return build_tools(
-        adapter_names=tuple(ADAPTER_REGISTRY.keys()),
+        adapter_names=adapter_names,
         default_timeout=DEFAULT_TIMEOUT,
         tool_description=tool_desc,
         status_description=status_desc,
@@ -729,6 +801,7 @@ def _build_tool_handler_deps() -> tool_handlers.ToolHandlerDeps:
         preflight_check=_preflight_check,
         run_cli=_run_cli,
         adapter_info=_adapter_info,
+        model_catalog=_model_catalog,
         status_check=_status_check,
     )
 
