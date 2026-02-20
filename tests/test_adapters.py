@@ -1,7 +1,7 @@
 import pytest
 
 from moonbridge.adapters import CLIAdapter, get_adapter, list_adapters
-from moonbridge.adapters.base import AgentResult
+from moonbridge.adapters.base import AgentResult, static_model_catalog
 from moonbridge.adapters.codex import CodexAdapter
 from moonbridge.adapters.gemini import GeminiAdapter
 from moonbridge.adapters.kimi import KimiAdapter
@@ -499,3 +499,116 @@ def test_codex_adapter_rejects_model_with_flag_pattern():
     adapter = CodexAdapter()
     with pytest.raises(ValueError, match="model cannot start with"):
         adapter.build_command("hello", thinking=False, model="-c")
+
+
+# static_model_catalog helper tests
+
+
+def test_static_model_catalog_returns_known_models():
+    """Helper returns config's known_models as a list with source 'static'."""
+    adapter = KimiAdapter()
+    models, source = static_model_catalog(adapter.config)
+    assert source == "static"
+    assert models == list(adapter.config.known_models)
+
+
+def test_static_model_catalog_returns_fresh_list():
+    """Each call returns a new list (not a reference to the config tuple)."""
+    adapter = CodexAdapter()
+    a, _ = static_model_catalog(adapter.config)
+    b, _ = static_model_catalog(adapter.config)
+    assert a == b
+    assert a is not b
+
+
+# list_models consistency across adapters
+
+
+def test_all_static_adapters_return_static_source():
+    """kimi, codex, gemini all report source='static'."""
+    for cls in (KimiAdapter, CodexAdapter, GeminiAdapter):
+        adapter = cls()
+        _, source = adapter.list_models(".")
+        assert source == "static", f"{adapter.config.name} should return 'static'"
+
+
+def test_gemini_list_models_returns_known_models():
+    """Gemini list_models returns all configured known_models."""
+    adapter = GeminiAdapter()
+    models, _ = adapter.list_models(".")
+    assert set(models) == {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"}
+
+
+# supports_provider_filter config flag
+
+
+def test_opencode_supports_provider_filter():
+    adapter = OpencodeAdapter()
+    assert adapter.config.supports_provider_filter is True
+
+
+def test_kimi_does_not_support_provider_filter():
+    adapter = KimiAdapter()
+    assert adapter.config.supports_provider_filter is False
+
+
+def test_codex_does_not_support_provider_filter():
+    adapter = CodexAdapter()
+    assert adapter.config.supports_provider_filter is False
+
+
+def test_gemini_does_not_support_provider_filter():
+    adapter = GeminiAdapter()
+    assert adapter.config.supports_provider_filter is False
+
+
+# OpenCode list_models edge cases
+
+
+def test_opencode_list_models_strips_ansi_escapes(mocker):
+    """ANSI escape codes in CLI output are stripped."""
+    adapter = OpencodeAdapter()
+    completed = mocker.Mock()
+    completed.returncode = 0
+    completed.stdout = "\x1B[32mopenrouter/gpt-5\x1B[0m\n\x1B[33mopenrouter/gpt-5-mini\x1B[0m\n"
+    completed.stderr = ""
+    mocker.patch("moonbridge.adapters.opencode.run", return_value=completed)
+
+    models, source = adapter.list_models(".", timeout_seconds=10)
+
+    assert source == "dynamic"
+    assert models == ["openrouter/gpt-5", "openrouter/gpt-5-mini"]
+
+
+def test_opencode_list_models_skips_usage_lines(mocker):
+    """Lines starting with 'Usage:' are filtered out."""
+    adapter = OpencodeAdapter()
+    completed = mocker.Mock()
+    completed.returncode = 0
+    completed.stdout = "Usage: opencode models [provider]\nopenrouter/gpt-5\n"
+    completed.stderr = ""
+    mocker.patch("moonbridge.adapters.opencode.run", return_value=completed)
+
+    models, _ = adapter.list_models(".", timeout_seconds=10)
+
+    assert models == ["openrouter/gpt-5"]
+
+
+def test_opencode_list_models_rejects_provider_starting_with_dash():
+    """Provider starting with '-' is rejected (flag injection prevention)."""
+    adapter = OpencodeAdapter()
+    with pytest.raises(ValueError, match="provider cannot start with"):
+        adapter.list_models(".", provider="--help")
+
+
+def test_opencode_list_models_raises_on_empty_output(mocker):
+    """Empty model output (after filtering) raises RuntimeError."""
+    adapter = OpencodeAdapter()
+    completed = mocker.Mock()
+    completed.returncode = 0
+    completed.stdout = "\n\n"
+    completed.stderr = ""
+    mocker.patch("moonbridge.adapters.opencode.run", return_value=completed)
+
+    with pytest.raises(RuntimeError, match="opencode models returned no models"):
+        adapter.list_models(".", timeout_seconds=10)

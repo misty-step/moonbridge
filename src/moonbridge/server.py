@@ -689,12 +689,11 @@ def _model_catalog(
     provider: str | None,
     refresh: bool,
 ) -> dict[str, Any]:
-    if provider and adapter.config.name != "opencode":
+    if provider and not adapter.config.supports_provider_filter:
         return {
             "status": "error",
             "message": (
-                "provider filter is only supported for opencode "
-                f"(got {adapter.config.name})"
+                f"provider filter is not supported for {adapter.config.name}"
             ),
         }
 

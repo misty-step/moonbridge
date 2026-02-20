@@ -2,7 +2,7 @@
 
 import shutil
 
-from .base import AdapterConfig
+from .base import AdapterConfig, static_model_catalog
 
 
 class GeminiAdapter:
@@ -96,8 +96,4 @@ class GeminiAdapter:
         refresh: bool = False,
         timeout_seconds: int = 30,
     ) -> tuple[list[str], str]:
-        _ = cwd
-        _ = provider
-        _ = refresh
-        _ = timeout_seconds
-        return (list(self.config.known_models), "static")
+        return static_model_catalog(self.config)

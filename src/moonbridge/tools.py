@@ -99,15 +99,8 @@ REASONING_EFFORT_PARAM = ParameterDef(
     enum=("low", "medium", "high", "xhigh"),
 )
 
-# Shorter reasoning_effort description for nested items
-REASONING_EFFORT_PARAM_SHORT = ParameterDef(
-    type="string",
-    description=(
-        "Reasoning effort for Codex (low, medium, high, xhigh). "
-        "Ignored for non-Codex adapters."
-    ),
-    enum=("low", "medium", "high", "xhigh"),
-)
+# Alias: reasoning_effort description is already concise enough for nested items.
+REASONING_EFFORT_PARAM_SHORT = REASONING_EFFORT_PARAM
 
 PROVIDER_PARAM = ParameterDef(
     type="string",

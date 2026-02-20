@@ -685,7 +685,51 @@ async def test_list_models_provider_rejected_for_non_opencode() -> None:
     payload = json.loads(result[0].text)
 
     assert payload["status"] == "error"
-    assert "provider filter is only supported for opencode" in payload["message"]
+    assert "provider filter is not supported for codex" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_models_exception_returns_error(monkeypatch: Any) -> None:
+    """When adapter.list_models raises, _model_catalog returns error payload."""
+    adapter = server_module.get_adapter("codex")
+    monkeypatch.setattr(adapter, "check_installed", lambda: (True, "/bin/codex"))
+    monkeypatch.setattr(
+        adapter,
+        "list_models",
+        lambda cwd, provider=None, refresh=False, timeout_seconds=30: (_ for _ in ()).throw(
+            RuntimeError("catalog fetch failed")
+        ),
+    )
+
+    result = await server_module.handle_tool("list_models", {"adapter": "codex"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "error"
+    assert "catalog fetch failed" in payload["message"]
+    assert payload["models"] == []
+    assert payload["adapter"] == "codex"
+
+
+@pytest.mark.asyncio
+async def test_list_models_deduplicates_results(monkeypatch: Any) -> None:
+    """Duplicate and whitespace-only models are removed."""
+    adapter = server_module.get_adapter("kimi")
+    monkeypatch.setattr(adapter, "check_installed", lambda: (True, "/bin/kimi"))
+    monkeypatch.setattr(
+        adapter,
+        "list_models",
+        lambda cwd, provider=None, refresh=False, timeout_seconds=30: (
+            ["model-a", "  model-a  ", "model-b", "", "  ", "model-b"],
+            "static",
+        ),
+    )
+
+    result = await server_module.handle_tool("list_models", {"adapter": "kimi"})
+    payload = json.loads(result[0].text)
+
+    assert payload["status"] == "success"
+    assert payload["models"] == ["model-a", "model-b"]
+    assert payload["count"] == 2
 
 
 @pytest.mark.asyncio

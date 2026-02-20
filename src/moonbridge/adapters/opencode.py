@@ -65,6 +65,7 @@ class OpencodeAdapter:
         known_models=("openrouter/minimax/minimax-m2.5",),
         default_timeout=1200,  # OpenCode can run multi-step agent loops.
         default_model="openrouter/minimax/minimax-m2.5",
+        supports_provider_filter=True,
     )
 
     def build_command(

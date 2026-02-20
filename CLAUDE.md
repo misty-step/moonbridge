@@ -45,7 +45,7 @@ src/moonbridge/
     └── __init__.py    # Adapter registry and get_adapter()
 ```
 
-**Adapter pattern**: The codebase uses a protocol-based adapter pattern to support multiple CLI backends. `CLIAdapter` defines the interface; each adapter implements `build_command()`, `check_installed()`, and `list_models()`. Kimi, Codex, OpenCode, and Gemini are implemented.
+**Adapter pattern**: The codebase uses a protocol-based adapter pattern to support multiple CLI backends. `CLIAdapter` defines the interface; each adapter implements `build_command()`, `check_installed()`, and `list_models()`. Kimi, Codex, OpenCode, and Gemini are implemented. Adapters with static model catalogs delegate to `static_model_catalog()` from `base.py`; only OpenCode queries its CLI dynamically. Adapter-specific capabilities (e.g., provider filtering) are declared via `AdapterConfig` flags (`supports_provider_filter`) rather than string comparisons against adapter names.
 
 **Protocol boundary**: `tool_handlers.py` owns MCP protocol dispatch (`spawn_agent`, `spawn_agents_parallel`, status/list calls) and stable response payload shaping. `server.py` provides orchestration callbacks (validation, adapter resolution, process execution).
 
