@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.15.0...moonbridge-v0.16.0) (2026-02-20)
+
+
+### Features
+
+* expose Gemini adapter and model catalog discovery across adapters ([#102](https://github.com/misty-step/moonbridge/issues/102)) ([6769bbe](https://github.com/misty-step/moonbridge/commit/6769bbe8171d59fa4b7684c59a90c9c5219eff33))
+
 ## [0.15.0](https://github.com/misty-step/moonbridge/compare/moonbridge-v0.14.0...moonbridge-v0.15.0) (2026-02-15)
 
 
