@@ -28,6 +28,7 @@ jobs:
 
   merge-gate:
     name: merge-gate
+    timeout-minutes: 5
     # NOTE: add every new deterministic CI job to this list so the merge gate stays complete.
     needs: [test]
     runs-on: ubuntu-latest
@@ -55,7 +56,11 @@ jobs:
           )
 
           if blocked:
-              print(f"merge-gate red ({summary})")
+              blocked_summary = ", ".join(
+                  f"{job_name}={result}"
+                  for job_name, result in sorted(blocked.items())
+              )
+              print(f"merge-gate red — failed: {blocked_summary} | all: {summary}")
               sys.exit(1)
 
           print(f"merge-gate green ({summary})")
